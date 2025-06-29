@@ -1,0 +1,195 @@
+name: Auto-Fix Workflow Failures
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to fix (leave empty for current branch)'
+        required: false
+        type: string
+      push_fixes:
+        description: 'Push fixes automatically'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  auto-fix:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[dev]
+        pip install autoflake  # For automatic unused import removal
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Determine branch to fix
+      id: branch
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          BRANCH="${{ github.event.inputs.branch }}"
+          if [[ -z "$BRANCH" ]]; then
+            BRANCH="${{ github.ref_name }}"
+          fi
+        else
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+        fi
+        echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+        echo "Fixing branch: $BRANCH"
+
+    - name: Checkout target branch
+      run: |
+        git checkout ${{ steps.branch.outputs.branch }}
+
+    - name: Run auto-fix script
+      id: autofix
+      run: |
+        python scripts/auto_fix_workflow.py --branch ${{ steps.branch.outputs.branch }} --commit
+        echo "fixes_applied=true" >> $GITHUB_OUTPUT
+      continue-on-error: true
+
+    - name: Check if fixes were applied
+      id: check_fixes
+      run: |
+        if git diff --name-only HEAD~1 HEAD | grep -q .; then
+          echo "has_fixes=true" >> $GITHUB_OUTPUT
+          echo "Fixes were applied and committed"
+        else
+          echo "has_fixes=false" >> $GITHUB_OUTPUT
+          echo "No fixes were applied"
+        fi
+
+    - name: Push fixes
+      if: steps.check_fixes.outputs.has_fixes == 'true' && (github.event.inputs.push_fixes == 'true' || github.event_name == 'workflow_run')
+      run: |
+        git push origin ${{ steps.branch.outputs.branch }}
+
+    - name: Create PR comment with fix report
+      if: steps.check_fixes.outputs.has_fixes == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { execSync } = require('child_process');
+
+          // Get workflow status
+          const workflowStatus = execSync('python scripts/check_workflows.py --branch ${{ steps.branch.outputs.branch }} --suggest-fixes',
+            { encoding: 'utf-8' });
+
+          // Find PR for this branch
+          const prs = await github.rest.pulls.list({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            head: `${context.repo.owner}:${{ steps.branch.outputs.branch }}`,
+            state: 'open'
+          });
+
+          if (prs.data.length > 0) {
+            const pr = prs.data[0];
+
+            const comment = `## 🤖 Auto-Fix Applied
+
+            I detected workflow failures and applied automatic fixes to this branch.
+
+            ### Workflow Status:
+            \`\`\`
+            ${workflowStatus}
+            \`\`\`
+
+            ### Changes Made:
+            - ✅ Automatic formatting fixes applied
+            - ✅ Import sorting corrected
+            - ✅ Basic linting issues resolved
+
+            The workflow should now pass. If there are still issues, they may require manual intervention.
+
+            ---
+            *This comment was generated automatically by the Auto-Fix workflow.*`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: comment
+            });
+          }
+
+    - name: Trigger re-run of failed workflow
+      if: steps.check_fixes.outputs.has_fixes == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // Re-run the failed workflow
+          if (context.eventName === 'workflow_run') {
+            await github.rest.actions.reRunWorkflow({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id
+            });
+          }
+
+    - name: Create issue if fixes failed
+      if: steps.autofix.outcome == 'failure'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { execSync } = require('child_process');
+
+          // Get detailed workflow analysis
+          const analysis = execSync('python scripts/check_workflows.py --branch ${{ steps.branch.outputs.branch }} --json --suggest-fixes',
+            { encoding: 'utf-8' });
+
+          const data = JSON.parse(analysis);
+
+          const issueBody = `## 🚨 Auto-Fix Failed
+
+          The auto-fix workflow was unable to resolve the CI failures automatically.
+
+          ### Failed Workflow Details:
+          - **Branch**: ${{ steps.branch.outputs.branch }}
+          - **Workflow**: ${data.name}
+          - **Status**: ${data.conclusion}
+          - **URL**: ${data.url}
+
+          ### Failed Steps:
+          ${data.failed_steps.map(step => `- **${step.job_name}**: ${step.step_name}`).join('\n')}
+
+          ### Suggested Manual Fixes:
+          ${data.suggestions ? data.suggestions.map(suggestion => `- ${suggestion}`).join('\n') : 'No specific suggestions available'}
+
+          ### Next Steps:
+          1. Review the workflow logs at the URL above
+          2. Apply the suggested fixes manually
+          3. Test locally with \`make ci\`
+          4. Commit and push the fixes
+
+          ---
+          *This issue was created automatically by the Auto-Fix workflow.*`;
+
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `🚨 Auto-Fix Failed for ${data.name} on ${{ steps.branch.outputs.branch }}`,
+            body: issueBody,
+            labels: ['bug', 'ci-failure', 'auto-generated']
+          });
