@@ -4,4 +4,5 @@
 # Additional development tools
 ipython>=8.15.0
 jupyter>=1.0.0
-pre-commit>=3.4.0 
+pre-commit>=3.4.0
+autoflake>=2.2.0  # For automatic unused import removal

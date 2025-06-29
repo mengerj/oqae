@@ -200,6 +200,10 @@ make pr
 | `make issue` | Create new GitHub issue |
 | `make pr` | Create pull request |
 | `make branch-from-issue` | Create branch from GitHub issue |
+| `make workflow-status` | Check current workflow status |
+| `make check-workflows` | Analyze workflow failures with suggestions |
+| `make auto-fix` | Automatically fix workflow failures |
+| `make auto-fix-push` | Auto-fix and push changes |
 
 ## 🔧 Configuration
 
@@ -258,6 +262,7 @@ See [Development Workflow](docs/DEVELOPMENT_WORKFLOW.md) for detailed guidance.
 ## 📖 Documentation
 
 - **[Development Workflow](docs/DEVELOPMENT_WORKFLOW.md)**: Comprehensive guide for Cursor AI development
+- **[Workflow Monitoring](docs/WORKFLOW_MONITORING.md)**: Auto-fix system for GitHub workflows
 - **API Documentation**: Auto-generated from docstrings
 - **Architecture Decisions**: Documented in code comments
 

@@ -3,16 +3,32 @@
 # Default target
 help:
 	@echo "Available commands:"
+	@echo ""
+	@echo "🏗️  Environment Setup:"
 	@echo "  setup-env     - Set up development environment"
 	@echo "  install       - Install production dependencies"
 	@echo "  install-dev   - Install development dependencies"
+	@echo ""
+	@echo "🧪 Testing & Quality:"
 	@echo "  test          - Run tests with coverage"
+	@echo "  test-watch    - Run tests in watch mode"
 	@echo "  lint          - Run linting (flake8)"
 	@echo "  format        - Format code (black + isort)"
 	@echo "  type-check    - Run type checking (mypy)"
 	@echo "  pre-commit    - Run pre-commit hooks"
-	@echo "  clean         - Clean build artifacts"
 	@echo "  ci            - Run full CI pipeline locally"
+	@echo ""
+	@echo "🔄 Workflow Management:"
+	@echo "  issue              - Create new GitHub issue"
+	@echo "  pr                 - Create pull request"
+	@echo "  branch-from-issue  - Create branch from GitHub issue"
+	@echo "  workflow-status    - Check current workflow status"
+	@echo "  check-workflows    - Analyze workflow failures with suggestions"
+	@echo "  auto-fix          - Automatically fix workflow failures"
+	@echo "  auto-fix-push     - Auto-fix and push changes"
+	@echo ""
+	@echo "🧹 Maintenance:"
+	@echo "  clean         - Clean build artifacts"
 
 # Environment setup
 setup-env:
@@ -82,4 +98,24 @@ branch-from-issue:
 	issue_title=$$(gh issue view $$issue_num --json title --jq '.title'); \
 	branch_name=$$(echo "$$issue_title" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$$//g'); \
 	git checkout -b "feature/$$branch_name-$$issue_num"; \
-	echo "Created branch: feature/$$branch_name-$$issue_num" 
+	echo "Created branch: feature/$$branch_name-$$issue_num"
+
+# Workflow monitoring and fixing
+check-workflows:
+	@python scripts/check_workflows.py --suggest-fixes
+
+check-workflows-json:
+	@python scripts/check_workflows.py --json --suggest-fixes
+
+auto-fix:
+	@python scripts/auto_fix_workflow.py --branch $$(git branch --show-current) --commit
+
+auto-fix-push:
+	@python scripts/auto_fix_workflow.py --branch $$(git branch --show-current) --commit --push
+
+workflow-status:
+	@echo "📊 Current Workflow Status:"
+	@python scripts/check_workflows.py
+	@echo ""
+	@echo "🔗 Recent workflow runs:"
+	@gh run list --limit 5
