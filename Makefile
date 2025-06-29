@@ -27,6 +27,10 @@ help:
 	@echo "  auto-fix          - Automatically fix workflow failures"
 	@echo "  auto-fix-push     - Auto-fix and push changes"
 	@echo ""
+	@echo "🚀 Template Setup (for new repositories):"
+	@echo "  setup-template       - Interactive setup for new project"
+	@echo "  setup-template-clean - Setup new project and remove examples"
+	@echo ""
 	@echo "🧹 Maintenance:"
 	@echo "  clean         - Clean build artifacts"
 
@@ -119,3 +123,12 @@ workflow-status:
 	@echo ""
 	@echo "🔗 Recent workflow runs:"
 	@gh run list --limit 5
+
+# Template setup (for new repositories created from template)
+setup-template:
+	@echo "🚀 Setting up new project from template..."
+	python scripts/setup_template.py
+
+setup-template-clean:
+	@echo "🚀 Setting up new project from template (removing examples)..."
+	python scripts/setup_template.py --remove-examples
