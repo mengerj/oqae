@@ -6,7 +6,6 @@ proper integration with the rich logging system.
 """
 
 import logging
-import pytest
 from unittest.mock import patch
 
 from omvqvae.utils.logging import get_logger, configure_logging

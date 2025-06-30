@@ -6,7 +6,6 @@ with rich formatting and configurable output levels.
 """
 
 import logging
-import sys
 from typing import Optional
 
 from rich.console import Console
