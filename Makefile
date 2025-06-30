@@ -127,8 +127,8 @@ workflow-status:
 # Template setup (for new repositories created from template)
 setup-template:
 	@echo "🚀 Setting up new project from template..."
-	python3 scripts/setup_template.py
+	python scripts/setup_template.py
 
 setup-template-clean:
 	@echo "🚀 Setting up new project from template (removing examples)..."
-	python3 scripts/setup_template.py --remove-examples
+	python scripts/setup_template.py --remove-examples
