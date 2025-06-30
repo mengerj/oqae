@@ -8,7 +8,7 @@ proper integration with the rich logging system.
 import logging
 from unittest.mock import patch
 
-from omvqvae.utils.logging import get_logger, configure_logging
+from omvqvae.utils.logging import configure_logging, get_logger
 
 
 class TestLogging:
