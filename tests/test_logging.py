@@ -40,7 +40,7 @@ class TestLogging:
 
     def test_configure_logging_quiet_mode(self) -> None:
         """Test that quiet mode disables logging."""
-        with patch('logging.disable') as mock_disable:
+        with patch("logging.disable") as mock_disable:
             configure_logging(quiet=True)
             mock_disable.assert_called_once_with(logging.CRITICAL)
 
