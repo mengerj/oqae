@@ -14,10 +14,11 @@ help:
 	@echo "  test          - Run tests with coverage"
 	@echo "  test-watch    - Run tests in watch mode"
 	@echo "  lint          - Run linting (flake8)"
-	@echo "  format        - Format code (black + isort)"
+	@echo "  format        - Format code (black + isort) - AUTO-FIXES"
+	@echo "  format-check  - Check code formatting (matches CI)"
 	@echo "  type-check    - Run type checking (currently disabled)"
 	@echo "  pre-commit    - Run pre-commit hooks"
-	@echo "  ci            - Run full CI pipeline locally"
+	@echo "  ci            - Run full CI pipeline locally (matches GitHub)"
 	@echo ""
 	@echo "🔄 Workflow Management:"
 	@echo "  issue              - Create new GitHub issue"
@@ -64,6 +65,10 @@ format:
 	uv run black src tests
 	uv run isort src tests
 
+format-check:
+	uv run black --check src tests
+	uv run isort --check-only src tests
+
 type-check:
 	@echo "⚠️  Type checking temporarily disabled due to module path conflicts"
 	@echo "ℹ️  Run 'uv run mypy --help' for manual type checking options"
@@ -83,9 +88,9 @@ clean:
 	find . -type d -name __pycache__ -delete
 	find . -type f -name "*.pyc" -delete
 
-# CI pipeline
-ci: format lint type-check test
-	@echo "✅ All checks passed!"
+# CI pipeline - matches GitHub workflow exactly
+ci: format-check lint type-check test
+	@echo "✅ All checks passed! (matches GitHub CI)"
 
 # Development workflow helpers
 issue:
