@@ -34,4 +34,4 @@ Add any other context about the problem here.
 If you were using Cursor AI when this occurred:
 - [ ] This issue was discovered while using Cursor AI
 - [ ] Cursor AI helped identify the issue
-- [ ] This affects the Cursor AI workflow 
+- [ ] This affects the Cursor AI workflow

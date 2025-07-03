@@ -15,10 +15,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Any
 
 
-def get_user_input() -> Dict[str, str]:
+def get_user_input() -> dict[str, str]:
     """Collect project information from user."""
     print("🚀 Setting up your new Cursor AI Python project!")
     print("Please provide the following information:\n")
@@ -28,36 +27,40 @@ def get_user_input() -> Dict[str, str]:
     # Get project name
     while True:
         name = input("Project name (e.g., 'my-awesome-app'): ").strip()
-        if name and re.match(r'^[a-z0-9\-_]+$', name):
-            project_info['name'] = name
+        if name and re.match(r"^[a-z0-9\-_]+$", name):
+            project_info["name"] = name
             break
         print("❌ Please use lowercase letters, numbers, hyphens, and underscores only")
 
     # Get project description
-    project_info['description'] = input("Project description: ").strip()
+    project_info["description"] = input("Project description: ").strip()
 
     # Get author info
-    project_info['author_name'] = input("Your name: ").strip()
-    project_info['author_email'] = input("Your email: ").strip()
+    project_info["author_name"] = input("Your name: ").strip()
+    project_info["author_email"] = input("Your email: ").strip()
 
     # Get repository info
-    default_username = subprocess.run(
-        ['git', 'config', 'user.name'],
-        capture_output=True, text=True
-    ).stdout.strip().replace(' ', '').lower()
+    default_username = (
+        subprocess.run(["git", "config", "user.name"], capture_output=True, text=True)
+        .stdout.strip()
+        .replace(" ", "")
+        .lower()
+    )
 
-    repo_url = input(f"Repository URL (e.g., 'https://github.com/{default_username}/{name}'): ").strip()
+    repo_url = input(
+        f"Repository URL (e.g., 'https://github.com/{default_username}/{name}'): "
+    ).strip()
     if not repo_url:
         repo_url = f"https://github.com/{default_username}/{project_info['name']}"
 
-    project_info['repository'] = repo_url
-    project_info['homepage'] = repo_url
-    project_info['issues'] = f"{repo_url}/issues"
+    project_info["repository"] = repo_url
+    project_info["homepage"] = repo_url
+    project_info["issues"] = f"{repo_url}/issues"
 
     return project_info
 
 
-def update_pyproject_toml(project_info: Dict[str, str]) -> None:
+def update_pyproject_toml(project_info: dict[str, str]) -> None:
     """Update pyproject.toml with project information."""
     print("\n📝 Updating pyproject.toml...")
 
@@ -66,24 +69,34 @@ def update_pyproject_toml(project_info: Dict[str, str]) -> None:
 
     # Update project fields
     content = re.sub(r'name = ".*?"', f'name = "{project_info["name"]}"', content)
-    content = re.sub(r'description = ".*?"', f'description = "{project_info["description"]}"', content)
+    content = re.sub(
+        r'description = ".*?"',
+        f'description = "{project_info["description"]}"',
+        content,
+    )
     content = re.sub(
         r'authors = \[\s*{name = ".*?", email = ".*?"}\s*\]',
         f'authors = [{{"name": "{project_info["author_name"]}", "email": "{project_info["author_email"]}"}}]',
         content,
-        flags=re.DOTALL
+        flags=re.DOTALL,
     )
 
     # Update URLs
-    content = re.sub(r'Homepage = ".*?"', f'Homepage = "{project_info["homepage"]}"', content)
-    content = re.sub(r'Repository = ".*?"', f'Repository = "{project_info["repository"]}.git"', content)
+    content = re.sub(
+        r'Homepage = ".*?"', f'Homepage = "{project_info["homepage"]}"', content
+    )
+    content = re.sub(
+        r'Repository = ".*?"',
+        f'Repository = "{project_info["repository"]}.git"',
+        content,
+    )
     content = re.sub(r'Issues = ".*?"', f'Issues = "{project_info["issues"]}"', content)
 
     pyproject_path.write_text(content)
     print("✅ Updated pyproject.toml")
 
 
-def update_init_py(project_info: Dict[str, str]) -> None:
+def update_init_py(project_info: dict[str, str]) -> None:
     """Update src/__init__.py with project information."""
     print("📝 Updating src/__init__.py...")
 
@@ -115,12 +128,12 @@ def remove_example_code() -> None:
         print("✅ Removed tests/test_calculator.py")
 
 
-def create_initial_module(project_info: Dict[str, str]) -> None:
+def create_initial_module(project_info: dict[str, str]) -> None:
     """Create initial module and test files."""
     print("📄 Creating initial module...")
 
     # Create main module
-    module_name = project_info['name'].replace('-', '_')
+    module_name = project_info["name"].replace("-", "_")
     module_path = Path(f"src/{module_name}.py")
 
     module_content = f'''"""
@@ -231,32 +244,39 @@ def run_initial_setup() -> None:
 
     try:
         # Install dependencies
-        subprocess.run(['make', 'install-dev'], check=True, capture_output=True)
+        subprocess.run(["make", "install-dev"], check=True, capture_output=True)
         print("✅ Installed development dependencies")
 
         # Run tests to make sure everything works
-        subprocess.run(['make', 'test'], check=True, capture_output=True)
+        subprocess.run(["make", "test"], check=True, capture_output=True)
         print("✅ Tests passed")
 
         # Run formatting
-        subprocess.run(['make', 'format'], check=True, capture_output=True)
+        subprocess.run(["make", "format"], check=True, capture_output=True)
         print("✅ Code formatted")
 
     except subprocess.CalledProcessError as e:
         print(f"❌ Setup command failed: {e}")
-        print("You may need to run 'make setup-env' and activate the virtual environment first")
+        print(
+            "You may need to run 'make setup-env' and activate the virtual environment first"
+        )
 
 
-def commit_changes(project_info: Dict[str, str]) -> None:
+def commit_changes(project_info: dict[str, str]) -> None:
     """Commit the initial changes."""
     print("\n📦 Committing changes...")
 
     try:
-        subprocess.run(['git', 'add', '.'], check=True)
-        subprocess.run([
-            'git', 'commit', '-m',
-            f"feat: Initialize {project_info['name']} from template\n\n- Update project information\n- Remove example code\n- Add initial module structure"
-        ], check=True)
+        subprocess.run(["git", "add", "."], check=True)
+        subprocess.run(
+            [
+                "git",
+                "commit",
+                "-m",
+                f"feat: Initialize {project_info['name']} from template\n\n- Update project information\n- Remove example code\n- Add initial module structure",
+            ],
+            check=True,
+        )
         print("✅ Changes committed")
 
         print("\n🎉 Setup complete! Your project is ready for development.")
@@ -272,19 +292,22 @@ def commit_changes(project_info: Dict[str, str]) -> None:
 
 def main():
     """Main setup function."""
-    parser = argparse.ArgumentParser(description="Setup new project from Cursor AI Python template")
-    parser.add_argument('--remove-examples', action='store_true',
-                       help='Remove example calculator code')
+    parser = argparse.ArgumentParser(
+        description="Setup new project from Cursor AI Python template"
+    )
+    parser.add_argument(
+        "--remove-examples", action="store_true", help="Remove example calculator code"
+    )
     args = parser.parse_args()
 
     # Check if we're in a git repository
-    if not Path('.git').exists():
+    if not Path(".git").exists():
         print("❌ This doesn't appear to be a git repository")
         print("Make sure you're in the root of your project directory")
         sys.exit(1)
 
     # Check for required files
-    required_files = ['pyproject.toml', 'src/__init__.py']
+    required_files = ["pyproject.toml", "src/__init__.py"]
     for file in required_files:
         if not Path(file).exists():
             print(f"❌ Required file {file} not found")
@@ -299,16 +322,20 @@ def main():
     update_init_py(project_info)
 
     # Handle example code
-    if args.remove_examples or input("\n🗑️  Remove example calculator code? (y/N): ").lower().startswith('y'):
+    if args.remove_examples or input(
+        "\n🗑️  Remove example calculator code? (y/N): "
+    ).lower().startswith("y"):
         remove_example_code()
         create_initial_module(project_info)
 
     # Run setup
-    if input("\n🔧 Run initial setup (install deps, run tests)? (Y/n): ").lower() not in ['n', 'no']:
+    if input(
+        "\n🔧 Run initial setup (install deps, run tests)? (Y/n): "
+    ).lower() not in ["n", "no"]:
         run_initial_setup()
 
     # Commit changes
-    if input("\n📦 Commit changes to git? (Y/n): ").lower() not in ['n', 'no']:
+    if input("\n📦 Commit changes to git? (Y/n): ").lower() not in ["n", "no"]:
         commit_changes(project_info)
 
     print(f"\n🚀 {project_info['name']} is ready! Happy coding with Cursor AI!")

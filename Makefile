@@ -14,7 +14,7 @@ help:
 	@echo "  test          - Run tests with coverage"
 	@echo "  test-watch    - Run tests in watch mode"
 	@echo "  lint          - Run linting (flake8)"
-	@echo "  format        - Format code (black + isort) - AUTO-FIXES"
+	@echo "  format        - Format code (autopep8 + black + isort) - AUTO-FIXES"
 	@echo "  format-check  - Check code formatting (matches CI)"
 	@echo "  type-check    - Run type checking (currently disabled)"
 	@echo "  pre-commit    - Run pre-commit hooks"
@@ -59,13 +59,19 @@ test-watch:
 
 # Code quality
 lint:
+	@echo "🔍 Running flake8 linting..."
 	uv run flake8 src tests
 
 format:
+	@echo "🔧 Auto-fixing code formatting and style issues..."
+	uv run autopep8 --in-place --recursive --aggressive --aggressive --max-line-length=88 \
+		--select=E1,E2,E3,E4,E5,E7,W1,W2,W3 src tests
 	uv run black src tests
 	uv run isort src tests
+	@echo "✅ Code formatting and style fixes applied"
 
 format-check:
+	@echo "🔍 Checking code formatting..."
 	uv run black --check src tests
 	uv run isort --check-only src tests
 
@@ -89,8 +95,22 @@ clean:
 	find . -type f -name "*.pyc" -delete
 
 # CI pipeline - matches GitHub workflow exactly
-ci: format-check lint type-check test
-	@echo "✅ All checks passed! (matches GitHub CI)"
+ci:
+	@echo "🚀 Running CI pipeline (matches GitHub workflow)..."
+	@echo ""
+	@echo "📋 Step 1: Code formatting check..."
+	@$(MAKE) format-check || (echo "❌ Format check failed" && exit 1)
+	@echo ""
+	@echo "📋 Step 2: Linting with flake8..."
+	@$(MAKE) lint || (echo "❌ Linting failed" && exit 1)
+	@echo ""
+	@echo "📋 Step 3: Type checking..."
+	@$(MAKE) type-check || (echo "❌ Type check failed" && exit 1)
+	@echo ""
+	@echo "📋 Step 4: Running tests..."
+	@$(MAKE) test || (echo "❌ Tests failed" && exit 1)
+	@echo ""
+	@echo "✅ All CI checks passed! (matches GitHub CI)"
 
 # Development workflow helpers
 issue:

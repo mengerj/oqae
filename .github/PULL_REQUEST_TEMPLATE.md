@@ -14,13 +14,13 @@ Fixes #(issue)
 
 ## Implementation
 ### Changes made:
-- 
-- 
-- 
+-
+-
+-
 
 ### Architecture decisions:
-- 
-- 
+-
+-
 
 ## Testing
 - [ ] Tests added/updated
@@ -58,4 +58,4 @@ Fixes #(issue)
 - [ ] My changes generate no new warnings
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] New and existing unit tests pass locally with my changes
-- [ ] Any dependent changes have been merged and published 
+- [ ] Any dependent changes have been merged and published

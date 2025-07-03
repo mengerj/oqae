@@ -9,14 +9,15 @@ and can automatically suggest or make adjustments based on failures.
 import json
 import subprocess
 import sys
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Optional
 
 
 @dataclass
 class WorkflowRun:
     """Represents a GitHub workflow run."""
+
     id: str
     name: str
     status: str
@@ -32,12 +33,13 @@ class WorkflowRun:
 @dataclass
 class WorkflowJob:
     """Represents a job within a workflow run."""
+
     id: str
     name: str
     status: str
     conclusion: Optional[str]
     html_url: str
-    steps: List[Dict[str, Any]]
+    steps: list[dict[str, Any]]
 
 
 class WorkflowChecker:
@@ -53,7 +55,7 @@ class WorkflowChecker:
                 ["git", "config", "--get", "remote.origin.url"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
             url = result.stdout.strip()
             # Extract owner/repo from URL
@@ -66,15 +68,25 @@ class WorkflowChecker:
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to get repository URL: {e}")
 
-    def get_workflow_runs(self, limit: int = 10) -> List[WorkflowRun]:
+    def get_workflow_runs(self, limit: int = 10) -> list[WorkflowRun]:
         """Get recent workflow runs."""
         try:
-            result = subprocess.run([
-                "gh", "run", "list",
-                "--repo", self.repo,
-                "--limit", str(limit),
-                "--json", "id,name,status,conclusion,url,headSha,headBranch,event,createdAt,updatedAt"
-            ], capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                [
+                    "gh",
+                    "run",
+                    "list",
+                    "--repo",
+                    self.repo,
+                    "--limit",
+                    str(limit),
+                    "--json",
+                    "id,name,status,conclusion,url,headSha,headBranch,event,createdAt,updatedAt",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             runs_data = json.loads(result.stdout)
             return [
@@ -88,7 +100,7 @@ class WorkflowChecker:
                     head_branch=run["headBranch"],
                     event=run["event"],
                     created_at=run["createdAt"],
-                    updated_at=run["updatedAt"]
+                    updated_at=run["updatedAt"],
                 )
                 for run in runs_data
             ]
@@ -99,14 +111,15 @@ class WorkflowChecker:
             print(f"Error parsing workflow runs JSON: {e}")
             return []
 
-    def get_workflow_jobs(self, run_id: str) -> List[WorkflowJob]:
+    def get_workflow_jobs(self, run_id: str) -> list[WorkflowJob]:
         """Get jobs for a specific workflow run."""
         try:
-            result = subprocess.run([
-                "gh", "run", "view", run_id,
-                "--repo", self.repo,
-                "--json", "jobs"
-            ], capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["gh", "run", "view", run_id, "--repo", self.repo, "--json", "jobs"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             data = json.loads(result.stdout)
             jobs_data = data.get("jobs", [])
@@ -118,7 +131,7 @@ class WorkflowChecker:
                     status=job["status"],
                     conclusion=job.get("conclusion"),
                     html_url=job["url"],
-                    steps=job.get("steps", [])
+                    steps=job.get("steps", []),
                 )
                 for job in jobs_data
             ]
@@ -129,7 +142,7 @@ class WorkflowChecker:
             print(f"Error parsing workflow jobs JSON: {e}")
             return []
 
-    def get_failed_steps(self, run_id: str) -> List[Dict[str, Any]]:
+    def get_failed_steps(self, run_id: str) -> list[dict[str, Any]]:
         """Get failed steps from a workflow run."""
         failed_steps = []
         jobs = self.get_workflow_jobs(run_id)
@@ -138,17 +151,19 @@ class WorkflowChecker:
             if job.conclusion == "failure":
                 for step in job.steps:
                     if step.get("conclusion") == "failure":
-                        failed_steps.append({
-                            "job_name": job.name,
-                            "step_name": step.get("name"),
-                            "step_number": step.get("number"),
-                            "conclusion": step.get("conclusion"),
-                            "log_url": f"{job.html_url}#step:{step.get('number')}:1"
-                        })
+                        failed_steps.append(
+                            {
+                                "job_name": job.name,
+                                "step_name": step.get("name"),
+                                "step_number": step.get("number"),
+                                "conclusion": step.get("conclusion"),
+                                "log_url": f"{job.html_url}#step:{step.get('number')}:1",
+                            }
+                        )
 
         return failed_steps
 
-    def analyze_failures(self, branch: Optional[str] = None) -> Dict[str, Any]:
+    def analyze_failures(self, branch: Optional[str] = None) -> dict[str, Any]:
         """Analyze workflow failures for a specific branch or latest runs."""
         runs = self.get_workflow_runs()
 
@@ -166,7 +181,7 @@ class WorkflowChecker:
             "conclusion": latest_run.conclusion,
             "branch": latest_run.head_branch,
             "url": latest_run.html_url,
-            "failed_steps": []
+            "failed_steps": [],
         }
 
         if latest_run.conclusion == "failure":
@@ -174,7 +189,7 @@ class WorkflowChecker:
 
         return analysis
 
-    def suggest_fixes(self, analysis: Dict[str, Any]) -> List[str]:
+    def suggest_fixes(self, analysis: dict[str, Any]) -> list[str]:
         """Suggest fixes based on workflow analysis."""
         suggestions = []
 
@@ -204,7 +219,9 @@ class WorkflowChecker:
 
             elif "security" in step_name or "bandit" in step_name:
                 suggestions.append("Run `bandit -r src/` to check security issues")
-                suggestions.append("Fix security vulnerabilities or add # nosec comments")
+                suggestions.append(
+                    "Fix security vulnerabilities or add # nosec comments"
+                )
 
         return list(set(suggestions))  # Remove duplicates
 
@@ -226,7 +243,7 @@ class WorkflowChecker:
                 f"❌ Workflow failed for branch: {analysis['branch']}",
                 f"🔗 URL: {analysis['url']}",
                 "",
-                "Failed steps:"
+                "Failed steps:",
             ]
 
             for step in analysis["failed_steps"]:
@@ -255,7 +272,9 @@ def main():
     parser.add_argument("--branch", help="Check specific branch")
     parser.add_argument("--repo", help="Repository (owner/repo)")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--suggest-fixes", action="store_true", help="Suggest fixes for failures")
+    parser.add_argument(
+        "--suggest-fixes", action="store_true", help="Suggest fixes for failures"
+    )
 
     args = parser.parse_args()
 

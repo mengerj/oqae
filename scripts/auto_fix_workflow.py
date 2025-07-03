@@ -6,13 +6,13 @@ This script can automatically fix common workflow failures and
 create commits with the fixes.
 """
 
+import json
+import os
 import subprocess
 import sys
-from pathlib import Path
-from typing import List, Dict, Any
-import json
 import tempfile
-import os
+from pathlib import Path
+from typing import Any
 
 from check_workflows import WorkflowChecker
 
@@ -24,7 +24,9 @@ class AutoFixer:
         self.dry_run = dry_run
         self.fixes_applied = []
 
-    def run_command(self, cmd: List[str], cwd: Path = None) -> subprocess.CompletedProcess:
+    def run_command(
+        self, cmd: list[str], cwd: Path = None
+    ) -> subprocess.CompletedProcess:
         """Run a command and return the result."""
         if self.dry_run:
             print(f"[DRY RUN] Would run: {' '.join(cmd)}")
@@ -32,11 +34,7 @@ class AutoFixer:
 
         try:
             result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=cwd
+                cmd, capture_output=True, text=True, check=True, cwd=cwd
             )
             return result
         except subprocess.CalledProcessError as e:
@@ -90,10 +88,21 @@ class AutoFixer:
                 if "imported but unused" in e.stdout:
                     print("🔧 Attempting to fix unused imports...")
                     try:
-                        self.run_command(["autoflake", "--remove-all-unused-imports", "--in-place", "-r", "src", "tests"])
+                        self.run_command(
+                            [
+                                "autoflake",
+                                "--remove-all-unused-imports",
+                                "--in-place",
+                                "-r",
+                                "src",
+                                "tests",
+                            ]
+                        )
                         fixes_made = True
                     except subprocess.CalledProcessError:
-                        print("⚠️  autoflake not available, skipping unused import fixes")
+                        print(
+                            "⚠️  autoflake not available, skipping unused import fixes"
+                        )
 
                 if fixes_made:
                     self.fixes_applied.append("linting")
@@ -220,7 +229,7 @@ class AutoFixer:
             print(f"❌ Failed to commit fixes: {e}")
             return False
 
-    def auto_fix_workflow_failures(self, branch: str = None) -> Dict[str, Any]:
+    def auto_fix_workflow_failures(self, branch: str = None) -> dict[str, Any]:
         """Automatically fix workflow failures for a branch."""
         print("🔍 Analyzing workflow failures...")
 
@@ -273,12 +282,12 @@ class AutoFixer:
                 "status": "fixes_applied",
                 "fixes": self.fixes_applied,
                 "committed": committed,
-                "message": f"Applied fixes: {', '.join(self.fixes_applied)}"
+                "message": f"Applied fixes: {', '.join(self.fixes_applied)}",
             }
         else:
             return {
                 "status": "no_fixes_applied",
-                "message": "No automatic fixes could be applied"
+                "message": "No automatic fixes could be applied",
             }
 
 
@@ -288,7 +297,11 @@ def main():
 
     parser = argparse.ArgumentParser(description="Automatically fix workflow failures")
     parser.add_argument("--branch", help="Fix failures for specific branch")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be done without doing it")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without doing it",
+    )
     parser.add_argument("--commit", action="store_true", help="Commit the fixes")
     parser.add_argument("--push", action="store_true", help="Push the fixes to remote")
 

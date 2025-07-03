@@ -251,7 +251,7 @@ def fix_custom_issue(self) -> bool:
 
 **Extend failure analysis** in `check_workflows.py`:
 ```python
-def suggest_fixes(self, analysis: Dict[str, Any]) -> List[str]:
+def suggest_fixes(self, analysis: dict[str, Any]) -> list[str]:
     # Add custom suggestion logic
     pass
 ```
