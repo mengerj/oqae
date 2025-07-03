@@ -157,3 +157,6 @@ Thumbs.db
 security-report.json
 bandit-report.json
 safety-report.json
+
+#wandb
+wandb/

@@ -38,4 +38,4 @@ Add any other context or screenshots about the feature request here.
 **Cursor AI Integration**
 - [ ] This feature would improve Cursor AI workflows
 - [ ] This feature was suggested by Cursor AI
-- [ ] This feature requires Cursor AI considerations 
+- [ ] This feature requires Cursor AI considerations
