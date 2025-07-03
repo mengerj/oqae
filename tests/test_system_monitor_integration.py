@@ -93,8 +93,8 @@ class TestSystemMonitorIntegration:
         with tempfile.TemporaryDirectory() as temp_dir:
             # Test plotting (with mocked matplotlib)
             with (
-                patch("matplotlib.pyplot.figure"),
-                patch("matplotlib.pyplot.savefig") as mock_savefig,
+                patch("omvqvae.utils.system_monitor.plt.figure"),
+                patch("omvqvae.utils.system_monitor.plt.savefig") as mock_savefig,
             ):
                 monitor.plot_metrics(save_dir=temp_dir)
                 assert mock_savefig.called

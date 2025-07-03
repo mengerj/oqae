@@ -181,8 +181,8 @@ class TestSystemMonitor:
                 # Should not raise exception
                 monitor.save_metrics(temp_dir)
 
-    @patch("matplotlib.pyplot.savefig")
-    @patch("matplotlib.pyplot.figure")
+    @patch("omvqvae.utils.system_monitor.plt.savefig")
+    @patch("omvqvae.utils.system_monitor.plt.figure")
     def test_plot_metrics_save_mode(
         self, mock_figure: Mock, mock_savefig: Mock
     ) -> None:

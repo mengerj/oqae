@@ -4,6 +4,7 @@ import platform
 import threading
 import time
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import psutil
@@ -31,6 +32,9 @@ class SystemMonitor:
     logger : logging.Logger, optional
         A logger instance to use for logging messages. If not provided,
         a logger is created.
+    show_plots : bool, optional
+        Whether to show plots when plot_metrics is called without save_dir.
+        Default is True. Set to False in testing environments to avoid GUI windows.
     """
 
     def __init__(
@@ -38,6 +42,7 @@ class SystemMonitor:
         interval: int = 1,
         gpu_idx: int | None = None,
         logger: logging.Logger | None = None,
+        show_plots: bool = True,
     ):
         self.interval = interval
         self.gpu_indices = [gpu_idx] if isinstance(gpu_idx, int) else gpu_idx
@@ -55,6 +60,7 @@ class SystemMonitor:
         self.logger = logger or get_logger(__name__)
         self.num_threads = []
         # self.cpu_affinity = []
+        self.show_plots = show_plots
 
         # GPU Monitoring Initialization
         self.gpu_available = False
@@ -580,6 +586,11 @@ class SystemMonitor:
         save_dir : str, optional
             Directory path to save the plots. If None, the plots are shown.
         """
+        # Set non-interactive backend if we're not showing plots
+        # But only if matplotlib isn't already mocked (for testing)
+        if not self.show_plots and save_dir is None and not hasattr(plt, "_mock_name"):
+            matplotlib.use("Agg")  # Non-interactive backend
+
         time_format = "%H:%M:%S"
 
         def format_time_ticks(timestamps):
@@ -637,7 +648,10 @@ class SystemMonitor:
                 plt.close()
             else:
                 plt.legend()
-                plt.show()
+                if self.show_plots:
+                    plt.show()
+                else:
+                    plt.close()
 
         # --- Memory Usage Plot ---
         if self.memory_usage:
@@ -668,7 +682,10 @@ class SystemMonitor:
                 plt.close()
             else:
                 plt.legend()
-                plt.show()
+                if self.show_plots:
+                    plt.show()
+                else:
+                    plt.close()
 
         # --- Disk I/O Plot ---
         if self.disk_io:
@@ -700,7 +717,10 @@ class SystemMonitor:
                 plt.savefig(os.path.join(save_dir, "disk_io.png"))
                 plt.close()
             else:
-                plt.show()
+                if self.show_plots:
+                    plt.show()
+                else:
+                    plt.close()
 
         # --- GPU Usage Plot ---
         if self.gpu_available and any(usage_data for usage_data in self.gpu_usage):
@@ -739,7 +759,10 @@ class SystemMonitor:
                 plt.savefig(os.path.join(save_dir, "gpu_usage.png"))
                 plt.close()
             else:
-                plt.show()
+                if self.show_plots:
+                    plt.show()
+                else:
+                    plt.close()
 
         # --- GPU Memory Usage Plot ---
         if self.gpu_available and any(
@@ -780,7 +803,20 @@ class SystemMonitor:
                 plt.savefig(os.path.join(save_dir, "gpu_memory_usage.png"))
                 plt.close()
             else:
-                plt.show()
+                if self.show_plots:
+                    plt.show()
+                else:
+                    plt.close()
 
         if save_dir:
             self.logger.info(f"Plots saved to {save_dir}")
+
+    def __enter__(self):
+        """Context manager entry point."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit point."""
+        self.stop()
+        return False  # Don't suppress exceptions
