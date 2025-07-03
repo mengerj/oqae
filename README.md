@@ -119,15 +119,21 @@ make help
 # Create feature branch from issue
 make branch-from-issue
 
-# Run tests in watch mode during development
-make test-watch
+# Development cycle (auto-fix mode)
+make format        # Auto-fix code formatting
+make test-watch    # Run tests in watch mode
 
-# Run full quality checks
-make ci
+# Before committing (check mode - matches GitHub CI)
+make ci            # Run full pipeline exactly like GitHub Actions
 
 # Create pull request
 make pr
 ```
+
+**Key Commands:**
+- `make format` - **Auto-fixes** formatting issues (for development)
+- `make format-check` - **Checks** formatting without fixing (matches CI)
+- `make ci` - Runs the exact same checks as GitHub Actions
 
 ### Available Commands
 
@@ -143,6 +149,14 @@ make pr
 | `make type-check` | Run type checking (currently disabled) |
 | `make workflow-status` | Check GitHub Actions workflow status |
 | `make auto-fix` | Automatically fix workflow failures |
+
+### ⚠️ Known Issues
+
+**Type Checking (mypy) Temporarily Disabled**
+- Issue: Module conflict between `src.omvqvae.utils.logging` and `omvqvae.utils.logging`
+- Cause: Editable package installation creates duplicate module paths
+- Status: Both local and GitHub CI skip mypy until resolved
+- Workaround: Manual type checking with specific files if needed
 
 ## 📚 Documentation
 
