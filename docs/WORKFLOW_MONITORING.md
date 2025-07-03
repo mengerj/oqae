@@ -334,6 +334,48 @@ git commit -m "fix: manual workflow fixes"
 # Re-enable auto-fix
 ```
 
+### GitHub CLI Pager Problems
+
+**Issue**: GitHub CLI commands fail with errors like:
+```
+head: |: No such file or directory
+head: cat: No such file or directory
+```
+
+**Root Cause**: Misconfigured pager settings interfere with GitHub CLI output processing.
+
+**Solution**: The monitoring system includes a `RobustGitHubCLI` wrapper that:
+- Sets `GH_PAGER=""` to disable paging
+- Configures proper environment variables
+- Provides API fallbacks when CLI fails
+- Handles authentication and parsing issues
+
+**Manual Fix**:
+```bash
+export GH_PAGER=""
+export PAGER=""
+export NO_COLOR="1"
+```
+
+### Robust Monitoring Features
+
+The system includes multiple layers of reliability:
+
+1. **Environment Setup**: Automatically configures GitHub CLI environment
+2. **API Fallbacks**: Falls back to direct GitHub API when CLI fails
+3. **Error Handling**: Graceful degradation with informative error messages
+4. **Timeout Protection**: Prevents hanging on network issues
+5. **Authentication Validation**: Checks and validates GitHub authentication
+
+**Testing the Robust System**:
+```bash
+# Test the robust GitHub CLI wrapper
+python scripts/robust_github_cli.py
+
+# Use enhanced workflow checking
+make check-workflows
+```
+
 ## 📊 Metrics & Analytics
 
 ### Trackable Metrics

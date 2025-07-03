@@ -1,4 +1,4 @@
-"""Paris 2025 - A Cursor AI development showcase project."""
+"""OQAE: Omics Quantized Auto Encoder - A lightweight VQ-VAE library for omics data."""
 
 __version__ = "0.1.0"
 __author__ = "mengerj"

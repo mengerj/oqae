@@ -17,7 +17,7 @@
     ],
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-        "source.organizeImports": true
+        "source.organizeImports": "explicit"
     },
     "files.exclude": {
         "**/__pycache__": true,
@@ -32,7 +32,9 @@
     "python.analysis.typeCheckingMode": "strict",
     "python.analysis.autoImportCompletions": true,
     "python.analysis.completeFunctionParens": true,
-    "editor.rulers": [88],
+    "editor.rulers": [
+        88
+    ],
     "files.trimTrailingWhitespace": true,
     "files.insertFinalNewline": true,
     "editor.wordWrap": "wordWrapColumn",
@@ -58,4 +60,4 @@
     "terminal.integrated.env.windows": {
         "PYTHONPATH": "${workspaceFolder}/src"
     }
-} 
+}
