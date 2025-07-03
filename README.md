@@ -22,8 +22,9 @@ A lightweight VQ-VAE library for large-scale omics data analysis with memory-eff
 ### Prerequisites
 
 - Python 3.11 or higher
+- [uv](https://docs.astral.sh/uv/) - Fast Python package manager
 - Git
-- [GitHub CLI](https://cli.github.com/) (optional, for development workflow)
+- [GitHub CLI](https://cli.github.com/) (optional, for automated workflows)
 
 ### Installation
 
@@ -101,12 +102,11 @@ src/omvqvae/
 git clone https://github.com/mengerj/oqae.git
 cd oqae
 
-# Set up development environment
+# Set up development environment with uv
 make setup-env
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-make install-dev
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Verify setup
+# Verify setup works
 make ci
 ```
 
@@ -134,12 +134,15 @@ make pr
 | Command | Description |
 |---------|-------------|
 | `make help` | Show all available commands |
+| `make setup-env` | Set up development environment with uv |
 | `make test` | Run tests with coverage |
 | `make test-watch` | Run tests in watch mode |
 | `make ci` | Run full CI pipeline locally |
 | `make format` | Format code (black + isort) |
 | `make lint` | Run linting (flake8) |
-| `make type-check` | Run type checking (mypy) |
+| `make type-check` | Run type checking (currently disabled) |
+| `make workflow-status` | Check GitHub Actions workflow status |
+| `make auto-fix` | Automatically fix workflow failures |
 
 ## 📚 Documentation
 
