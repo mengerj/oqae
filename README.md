@@ -197,7 +197,9 @@ make pr
 
 ## 📚 Documentation
 
-- [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) - Complete project roadmap and architecture
+- [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) - Complete project roadmap, architecture, and design-decisions log
+- [docs/STATUS.md](docs/STATUS.md) - Live status and the current next task
+- [CLAUDE.md](CLAUDE.md) - Orientation guide for AI/contributor sessions
 - [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) - Development guidelines
 - [docs/WORKFLOW_MONITORING.md](docs/WORKFLOW_MONITORING.md) - CI/CD monitoring
 
