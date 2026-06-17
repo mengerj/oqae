@@ -62,9 +62,28 @@ sources:
 
 Both sources are normalized to a common minibatch contract:
 `(counts, obs_covariates)` where `counts` is a dense/sparse cell × gene tensor
-of **raw counts** and `obs_covariates` carries optional conditioning fields
-(e.g. batch/dataset id). A shared **gene-space mapping** aligns each source to
-the model's expected feature ordering.
+of **raw counts** and `obs_covariates` carries optional metadata fields
+(e.g. batch/dataset id, organism). A per-organism **gene-space mapping** aligns
+each source to the model's expected feature ordering (see below).
+
+#### **Multi-organism support (human + mouse)**
+
+The Census hosts multiple organisms; **v1 supports both human and mouse**. Each
+organism has its own gene/feature universe, so OQAE is **organism-aware**:
+
+- `organism` is an explicit parameter of the data layer (and is recorded in
+  model metadata). Census slices are queried per-organism (the Census exposes
+  `homo_sapiens` and `mus_musculus` experiments separately).
+- Each organism has its own **reference gene set** (the Census `var` index for
+  that organism, optionally restricted to a configurable panel). Local AnnData
+  is aligned/subset to the reference for its organism — genes present in the
+  reference but missing locally are zero-filled; extra local genes are dropped —
+  with a warning when overlap is low.
+- A trained model carries a fixed organism + gene vocabulary; **v1 trains one
+  model per organism** (separate codebooks/feature spaces). Cross-organism
+  unification into a single shared latent space is an explicit **open design
+  question deferred past v1** (would require ortholog mapping or a shared gene
+  embedding); it does not block the v1 data layer or model.
 
 ### **Data Flow Architecture**
 ```
@@ -120,10 +139,14 @@ Concretely:
 - **Straight-through estimator** for gradient flow through the discrete
   bottleneck; **codebook/commitment losses** and **perplexity** monitoring to
   track codebook utilization and guard against collapse.
-- **Generative decoder**: maps quantized codes (optionally + size factor +
-  covariates) to NB/ZINB parameters over genes.
-- **Covariate conditioning**: optional categorical conditioning (e.g.
-  batch/dataset id) to encourage a shared latent space across studies.
+- **Generative decoder**: maps quantized codes (+ size factor) to NB/ZINB
+  parameters over genes.
+- **Conditioning**: **v1 is unconditional** (no batch/dataset covariate fed to
+  the model). Optional categorical conditioning to encourage cross-study
+  integration is deferred; we will first **benchmark whether batch effects are
+  actually a problem** in the discrete latent space (PR #9) and only add
+  conditioning if needed. The data layer still *carries* covariates in the
+  minibatch so this can be enabled later without a data-format change.
 - **CPU/GPU**: inference on CPU, training optimized for GPU.
 
 ### **Experiment Tracking & Monitoring**
@@ -195,19 +218,27 @@ src/omvqvae/
   (black/isort/flake8/**mypy**/pytest/bandit), pre-commit, Makefile.
 - Exit criteria: green CI, package imports a logger, strict mypy passes.
 
-#### **PR #2: Data Layer — Census streaming + local AnnData**
-- **Scope**: unified data interface over two sources.
+#### **PR #2: Data Layer — Census streaming + local AnnData (NEXT)**
+- **Scope**: unified data interface over two sources, **organism-aware
+  (human + mouse)**.
 - **Files**: `data/census.py`, `data/anndata_io.py`, `data/dataset.py`,
   `data/normalize.py`.
 - **Key features**:
   - CELLxGENE Census streaming via `cellxgene_census` + `tiledbsoma` +
-    `tiledbsoma_ml` (pinned Census version, `obs_query` filtering, raw layer).
+    `tiledbsoma_ml` (pinned Census version, `obs_query` filtering, raw layer),
+    with `organism` selecting the `homo_sapiens` / `mus_musculus` experiment.
   - Local `.h5ad` / `.zarr` loaders with chunked/backed reads.
-  - Common `(raw_counts, covariates)` minibatch contract + gene-space
-    alignment.
+  - **Per-organism reference gene set** + alignment helper that maps any source
+    (Census or local) onto that organism's feature ordering (zero-fill missing,
+    drop extra, warn on low overlap).
+  - Common `(raw_counts, covariates)` minibatch contract (covariates carry
+    organism + batch/dataset id even though v1 is unconditional).
   - Size-factor computation; internal-normalization helpers.
-- **Exit criteria**: stream a small Census slice and iterate a local AnnData
-  through the *same* DataLoader API; tests with a tiny fixture; bounded memory.
+- **Dependencies to add** (with refreshed `uv.lock`): `cellxgene-census`,
+  `tiledbsoma`, `tiledbsoma-ml`.
+- **Exit criteria**: stream a small Census slice (human *and* mouse) and iterate
+  a local AnnData through the *same* DataLoader API; tests with a tiny offline
+  fixture (live-Census tests marked/skippable); strict mypy + bounded memory.
 
 #### **PR #3: Residual Vector Quantizer Layer**
 - **Scope**: configurable residual VQ with straight-through estimator.
@@ -320,6 +351,20 @@ dependencies = [
   collapse); faithful encode→decode reconstruction; meaningful structure in the
   discrete space.
 
+## 🧭 **Design Decisions Log**
+
+A running record of decisions so future sessions don't re-litigate them.
+
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-06-17 | **Goal**: discrete, universal latent space for omics — cells → sets of discrete codes that plug into a generative decoder. Start with scRNA-seq. | Codes are composable/decoder-pluggable; enables compression, integration, and generation from a shared vocabulary. |
+| 2026-06-17 | **Primary data = stream from CZ CELLxGENE Census** (TileDB-SOMA); also support local `.h5ad`/`.zarr`. Dropped Zarr/Dask-primary framing. | Census hosts a huge standardized scRNA-seq corpus; streaming avoids downloading it. |
+| 2026-06-17 | **Ingest raw counts; reconstruct with NB/ZINB**, library size handled internally. Log-normalized/Gaussian kept as pluggable alternative. | Matches scVI-family practice; preserves count statistics; avoids baking in normalization. |
+| 2026-06-17 | **Monitoring = Weights & Biases** (offline-friendly); removed bespoke `system_monitor`. | Standard tool; less code to maintain. |
+| 2026-06-17 | **Multi-organism: support human + mouse**, organism-aware with a per-organism gene space; **one model per organism in v1**. Cross-organism unification deferred. | Each organism has a distinct gene universe; ortholog/shared-embedding mapping is a separate research question. |
+| 2026-06-17 | **v1 model is unconditional** (no batch/covariate input). Revisit only if benchmarking shows batch effects hurt the latent space. | Keep v1 simple; data layer still carries covariates so conditioning can be added later without a format change. |
+| 2026-06-17 | **Next implementation = PR #2 (data layer).** | Unblocks the quantizer and model PRs. |
+
 ## 🔄 **Future Roadmap (Post-v1.0)**
 - **Other omics modalities**: extend the discrete-codebook approach beyond
   scRNA-seq (ATAC, protein, multi-omics joint training).
@@ -335,6 +380,7 @@ dependencies = [
 
 ---
 
-**Last Updated**: 2026-06-17 — pivot to CELLxGENE Census streaming, raw-count
-(NB/ZINB) modeling, discrete universal latent space, and W&B-based monitoring.
+**Last Updated**: 2026-06-17 — clarified multi-organism (human + mouse) support,
+v1-unconditional decision, and added the design-decisions log.
+**Current Focus**: PR #2 — organism-aware data layer (see `docs/STATUS.md`).
 **Next Review**: After PR #2 (data layer).
