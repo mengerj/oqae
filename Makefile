@@ -16,7 +16,7 @@ help:
 	@echo "  lint          - Run linting (flake8)"
 	@echo "  format        - Format code (autopep8 + black + isort) - AUTO-FIXES"
 	@echo "  format-check  - Check code formatting (matches CI)"
-	@echo "  type-check    - Run type checking (currently disabled)"
+	@echo "  type-check    - Run type checking (mypy strict)"
 	@echo "  pre-commit    - Run pre-commit hooks"
 	@echo "  ci            - Run full CI pipeline locally (matches GitHub)"
 	@echo ""
@@ -76,8 +76,8 @@ format-check:
 	uv run isort --check-only src tests
 
 type-check:
-	@echo "⚠️  Type checking temporarily disabled due to module path conflicts"
-	@echo "ℹ️  Run 'uv run mypy --help' for manual type checking options"
+	@echo "🔍 Running mypy type checking..."
+	uv run mypy src/omvqvae
 
 pre-commit:
 	uv run pre-commit run --all-files

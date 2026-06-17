@@ -33,10 +33,10 @@ dependencies = [
     "omegaconf>=2.3.0",
     "rich>=13.0.0",
     "typer>=0.9.0",
-    # System monitoring dependencies
-    "psutil>=5.9.0",
-    "matplotlib>=3.5.0",
+    # Experiment tracking
     "wandb>=0.21.0",
+    # NOTE: CELLxGENE Census streaming deps (cellxgene-census, tiledbsoma,
+    # tiledbsoma-ml) are added in PR #2 when the data layer first uses them.
 ]
 
 [project.optional-dependencies]
@@ -50,10 +50,6 @@ dev = [
     "pytest-cov>=4.1.0",
     "pre-commit>=3.4.0",
     "coverage>=7.3.0",
-]
-monitoring = [
-    "pynvml>=11.0.0",
-    "wandb>=0.15.0",
 ]
 
 [project.urls]

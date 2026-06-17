@@ -40,10 +40,9 @@ jobs:
       run: |
         uv run flake8 src tests
 
-    - name: Type check with mypy (temporarily disabled)
+    - name: Type check with mypy
       run: |
-        echo "⚠️  Type checking temporarily disabled due to module path conflicts"
-        echo "ℹ️  See Makefile type-check target for details"
+        uv run mypy src/omvqvae
 
     - name: Test with pytest
       run: |
