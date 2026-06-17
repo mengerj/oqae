@@ -2,59 +2,157 @@
 
 ## 🎯 **Project Overview**
 
-**OQAE** (Omics Quantized Auto Encoder) is a lightweight, production-ready Python library that implements residual-quantized VQ-VAEs for diverse omics data stored in AnnData format. The library supports large-scale datasets (100GB+) on modest hardware (16GB RAM) through intelligent Zarr/Dask integration and provides seamless model sharing via Hugging Face Hub.
+**OQAE** (Omics Quantized Auto Encoder) is a lightweight, production-ready
+Python library that learns a **discrete, universal latent space for omics
+data** using a residual-quantized VQ-VAE.
+
+The central idea: represent any single-cell RNA-seq (scRNA-seq) sample as a
+**set of discrete code vectors** (indices into learned codebooks). Those codes
+are a compact, universal "vocabulary" of expression patterns. Because the
+codes are discrete and the decoder is generative, the same codes can be fed
+back into the trained decoder to **reconstruct or generate** expression
+profiles — enabling representation learning, compression, integration, and
+in-silico data generation from a shared latent vocabulary.
+
+We **start with scRNA-seq** because the CZ CELLxGENE Census hosts a very large,
+standardized corpus of single-cell RNA-seq, which lets us train at scale by
+streaming. The architecture is designed so the same discrete-codebook approach
+can later extend to other omics modalities.
 
 ### **Core Value Proposition**
-- **Memory Efficient**: Handle 100GB+ datasets with 16GB RAM constraint
-- **Scalable**: Local Dask processing with distributed computing support
-- **Reproducible**: HuggingFace Hub integration for model sharing
-- **Flexible**: Configurable architecture for diverse omics modalities
-- **Production Ready**: 90%+ test coverage, strict typing, comprehensive CI/CD
+- **Discrete universal latent space**: Every cell → a set of discrete codes
+  drawn from shared codebooks; codes are composable and decoder-pluggable.
+- **Train at scale by streaming**: Stream millions of cells directly from the
+  CZ CELLxGENE Census via TileDB-SOMA — no need to download or hold the full
+  corpus in memory.
+- **Bring-your-own-data**: Train or fine-tune on a local `.h5ad` or `.zarr`
+  AnnData file with the same interface.
+- **Raw counts in, counts out**: Model raw counts directly with a count
+  likelihood (Negative Binomial / Zero-Inflated NB) — no mandatory external
+  normalization pipeline.
+- **Generative decoder**: Discrete codes → decoder → expression, for
+  reconstruction and synthetic data generation.
+- **Production Ready**: strict typing (mypy), high test coverage, W&B
+  experiment tracking, comprehensive CI/CD.
 
 ## 🏗️ **Architecture Decisions**
 
-### **Memory Management Strategy**
-- **Zarr-First Approach**: Primary storage backend for large datasets
-- **AnnData Compatibility**: Support h5ad → zarr conversion for existing workflows
-- **Chunked Processing**: Never load full datasets into memory
-- **Dask Integration**: Lazy evaluation with configurable chunk sizes
-- **Memory Mapping**: Efficient data access patterns
+### **Data Sources & Loading Strategy**
+
+OQAE consumes data through a single unified loader interface backed by two
+sources:
+
+1. **CZ CELLxGENE Census (primary, streaming)** — the recommended path for
+   large-scale training. We use the maintained TileDB-SOMA stack:
+   - `cellxgene_census` to open a pinned Census version
+     (e.g. `census_version="2025-01-30"`).
+   - `tiledbsoma` `ExperimentAxisQuery` to define the slice of cells via
+     `obs_query` value filters (e.g. tissue, assay, disease).
+   - `tiledbsoma_ml.ExperimentDataset` — a PyTorch `IterableDataset` that
+     streams batches without materializing the full result in memory — wrapped
+     with `experiment_dataloader()` for correct/performant multi-worker
+     iteration. Raw counts are read via the `"raw"` layer.
+
+   > Note: this supersedes the deprecated
+   > `cellxgene_census.experimental.ml.ExperimentDataPipe` API.
+
+2. **Local AnnData (`.h5ad` / `.zarr`)** — for training/fine-tuning on private
+   or curated datasets. Larger-than-memory local files are read in chunks
+   (zarr-backed / backed-mode AnnData) so the same memory discipline applies.
+
+Both sources are normalized to a common minibatch contract:
+`(counts, obs_covariates)` where `counts` is a dense/sparse cell × gene tensor
+of **raw counts** and `obs_covariates` carries optional conditioning fields
+(e.g. batch/dataset id). A shared **gene-space mapping** aligns each source to
+the model's expected feature ordering.
 
 ### **Data Flow Architecture**
 ```
-Raw Data → AnnData(.h5ad) → Zarr Backend → Dask Arrays → VQ-VAE Model → HF Hub
+CZ CELLxGENE Census (TileDB-SOMA) ─┐
+                                   ├─► Streaming DataLoader ─► raw counts ─┐
+Local AnnData (.h5ad / .zarr) ─────┘   (batched, shuffled)                │
+                                                                          ▼
+                    Encoder ─► Residual Vector Quantizer ─► Decoder ─► NB/ZINB
+                       │         (discrete codes / codebooks)    │      params
+                       │                                         │
+                  internal log1p                          reconstructs raw
+                  (numerical stability)                   counts (library-size
+                                                          aware)
+                                          │
+                                   W&B experiment tracking
+                                   (losses, codebook usage/perplexity)
 ```
+
+### **Input Representation & Normalization**
+
+A deliberate change from the original plan: **the model ingests raw counts and
+performs normalization internally**, rather than requiring a fixed external
+log1p→CPM→standardize pipeline.
+
+This follows the design of modern single-cell VAEs (e.g. the scVI family),
+which feed unnormalized counts and use a **Negative Binomial (NB)** — or
+**Zero-Inflated NB (ZINB)** — reconstruction likelihood. Library-size / depth
+variation is handled inside the model (via an observed size factor or a learned
+library term) rather than by pre-normalizing the data. This keeps the count
+statistics intact and avoids baking normalization choices into the dataset.
+
+Concretely:
+- **Decoder likelihood**: NB by default; ZINB and Gaussian-on-log1p available
+  as pluggable alternatives so we can benchmark them.
+- **Encoder input**: raw counts with an **internal log1p (and optional
+  per-cell normalization)** applied for numerical stability before encoding —
+  this is an internal transform, not a user-facing preprocessing step.
+- **Size factors**: derived from observed total counts per cell, fed to the
+  decoder so it reconstructs depth-appropriate counts.
+- **Pluggable**: likelihood and internal-normalization are configurable, so a
+  user can opt into a log-normalized/Gaussian setup if desired.
+
+> **Open design question (to validate empirically):** raw-count + NB vs.
+> log-normalized + Gaussian for the *quantized* setting. The plan is to support
+> both and benchmark reconstruction, codebook utilization, and downstream
+> separability (see PR #9).
 
 ### **Model Architecture**
-- **Residual Quantization**: Configurable number of codebook layers (default: 2)
-- **Batch Correction**: Categorical batch embeddings (continuous support later)
-- **Modular Design**: Pluggable encoders, decoders, and quantizers
-- **CPU/GPU Compatibility**: Inference on CPU, training optimized for GPU
+- **Encoder → Residual Vector Quantizer → Decoder.**
+- **Residual quantization**: configurable number of codebook levels (default
+  2); each cell is encoded as a set/sequence of codebook indices — this *is*
+  the discrete universal representation.
+- **Straight-through estimator** for gradient flow through the discrete
+  bottleneck; **codebook/commitment losses** and **perplexity** monitoring to
+  track codebook utilization and guard against collapse.
+- **Generative decoder**: maps quantized codes (optionally + size factor +
+  covariates) to NB/ZINB parameters over genes.
+- **Covariate conditioning**: optional categorical conditioning (e.g.
+  batch/dataset id) to encourage a shared latent space across studies.
+- **CPU/GPU**: inference on CPU, training optimized for GPU.
 
-### **Normalization Pipeline**
-```python
-Raw Counts → Log1p Transform → CPM Normalization → Standardization (Optional)
-```
-- **Pluggable Normalizers**: Support custom normalization functions
-- **Batch-Aware**: Handle batch effects during normalization if needed
-- **Configurable**: Skip/modify steps based on data characteristics
+### **Experiment Tracking & Monitoring**
+- **Weights & Biases (W&B)** is the primary monitoring tool: log training/val
+  losses, reconstruction metrics, codebook usage/perplexity, learning-rate, and
+  resource stats, with run config captured for reproducibility.
+- W&B is **optional/offline-friendly** (a no-op/console logger is used when W&B
+  is disabled), so the library remains usable without an account.
+- The previous bespoke `system_monitor` utility has been removed in favor of
+  this integration.
 
 ## 📊 **Technical Requirements**
 
-### **Performance Constraints**
-- **Memory**: Support 100GB+ datasets with 16GB RAM
-- **Speed**: Training epochs < 10 minutes for 100K cells (GPU)
-- **Scalability**: Linear scaling with cell count via chunking
+### **Performance & Scale**
+- **Streaming-first**: train over Census-scale corpora (tens of millions of
+  cells) without downloading them, bounded host memory via batched streaming.
+- **Local large files**: chunked/backed reads for `.h5ad` / `.zarr` larger than
+  RAM.
+- **Speed**: efficient GPU training; smoke-test toy training in minutes.
 
 ### **Hardware Compatibility**
-- **CPU**: Full inference and small-scale training support
-- **GPU**: Optimized training for large datasets
-- **Memory**: Efficient memory usage patterns
+- **CPU**: full inference and small-scale training.
+- **GPU**: optimized training for large datasets.
 
 ### **Integration Requirements**
-- **Scanpy Compatibility**: Seamless integration with existing workflows
-- **HuggingFace Hub**: Model sharing and versioning
-- **Dask Distributed**: Future support for cluster computing
+- **CZ CELLxGENE Census**: streaming training data via TileDB-SOMA.
+- **AnnData ecosystem**: `.h5ad` / `.zarr` interoperability.
+- **HuggingFace Hub**: model + codebook sharing and versioning.
+- **Weights & Biases**: experiment tracking.
 
 ## 🗂️ **Package Structure**
 
@@ -63,182 +161,180 @@ src/omvqvae/
 ├── __init__.py
 ├── data/
 │   ├── __init__.py
-│   ├── io.py              # AnnData/Zarr I/O operations
-│   └── preprocessing.py   # Normalization pipelines
+│   ├── census.py          # CELLxGENE Census streaming loaders (TileDB-SOMA)
+│   ├── anndata_io.py      # Local .h5ad / .zarr AnnData loaders (chunked)
+│   ├── dataset.py         # Unified minibatch contract + gene-space alignment
+│   └── normalize.py       # Internal normalization / size-factor helpers
 ├── layers/
 │   ├── __init__.py
-│   └── residual_vq.py    # Residual quantization layers
+│   └── residual_vq.py     # Residual vector-quantization layers
 ├── models/
 │   ├── __init__.py
-│   └── vqvae.py          # Main VQ-VAE model
+│   ├── vqvae.py           # Encoder/decoder VQ-VAE
+│   └── likelihoods.py     # NB / ZINB / Gaussian reconstruction heads
 ├── train/
 │   ├── __init__.py
-│   └── cli.py            # Training CLI interface
+│   ├── cli.py             # Training/fine-tuning CLI (typer + OmegaConf)
+│   └── loop.py            # Training loop + W&B logging
+├── inference/
+│   ├── __init__.py
+│   └── codes.py           # encode → discrete codes; decode codes → expression
 ├── utils/
 │   ├── __init__.py
-│   ├── logging.py        # Centralized logging
-│   └── memory.py         # Memory management utilities
-└── hf_utils.py           # HuggingFace Hub integration
+│   ├── logging.py         # Centralized logging
+│   └── tracking.py        # W&B / offline experiment-tracking wrapper
+└── hf_utils.py            # HuggingFace Hub integration
 ```
 
-## 🛣️ **Development Roadmap (10 PRs)**
+## 🛣️ **Development Roadmap**
 
-### **Phase 1: Foundation (PRs 1-3)**
+### **Phase 1: Foundation & Data (PRs 1–3)**
 
-#### **PR #1: Logging & Utilities**
-- **Scope**: Core utilities and logging infrastructure
-- **Files**: `utils/logging.py`, `utils/memory.py`, basic project structure
-- **Exit Criteria**: All modules can import logger, CI pipeline green
-- **Memory Focus**: Memory monitoring utilities, chunk size calculators
+#### **PR #1: Logging & Tooling — ✅ DONE**
+- Core logging (`utils/logging.py`), uv-based dev workflow, CI/CD
+  (black/isort/flake8/**mypy**/pytest/bandit), pre-commit, Makefile.
+- Exit criteria: green CI, package imports a logger, strict mypy passes.
 
-#### **PR #2: Data I/O & Preprocessing**
-- **Scope**: AnnData/Zarr I/O, Dask integration, normalization pipeline
-- **Files**: `data/io.py`, `data/preprocessing.py`
-- **Exit Criteria**: Round-trip tests pass, memory usage < 16GB for 100GB dataset
-- **Key Features**:
-  - Zarr-backed AnnData loading
-  - Chunked data processing
-  - Pluggable normalization pipeline
-  - Memory-efficient batch processing
+#### **PR #2: Data Layer — Census streaming + local AnnData**
+- **Scope**: unified data interface over two sources.
+- **Files**: `data/census.py`, `data/anndata_io.py`, `data/dataset.py`,
+  `data/normalize.py`.
+- **Key features**:
+  - CELLxGENE Census streaming via `cellxgene_census` + `tiledbsoma` +
+    `tiledbsoma_ml` (pinned Census version, `obs_query` filtering, raw layer).
+  - Local `.h5ad` / `.zarr` loaders with chunked/backed reads.
+  - Common `(raw_counts, covariates)` minibatch contract + gene-space
+    alignment.
+  - Size-factor computation; internal-normalization helpers.
+- **Exit criteria**: stream a small Census slice and iterate a local AnnData
+  through the *same* DataLoader API; tests with a tiny fixture; bounded memory.
 
-#### **PR #3: Residual Quantizer Layer**
-- **Scope**: Core VQ layer with configurable residual levels
-- **Files**: `layers/residual_vq.py`
-- **Exit Criteria**: 90%+ test coverage, gradient flow verification
-- **Key Features**:
-  - Configurable codebook count
-  - Straight-through estimator
-  - Perplexity monitoring
+#### **PR #3: Residual Vector Quantizer Layer**
+- **Scope**: configurable residual VQ with straight-through estimator.
+- **Files**: `layers/residual_vq.py`.
+- **Key features**: configurable codebook count/size, commitment loss,
+  perplexity/utilization metrics, codebook reset/EMA option.
+- **Exit criteria**: high test coverage, gradient-flow verification.
 
-### **Phase 2: Core Model (PRs 4-6)**
+### **Phase 2: Core Model (PRs 4–6)**
 
-#### **PR #4: VQ-VAE Core Model**
-- **Scope**: Encoder/decoder architecture, loss computation
-- **Files**: `models/vqvae.py`
-- **Exit Criteria**: 2-epoch smoke test on synthetic data
-- **Memory Focus**: Gradient checkpointing, efficient forward pass
+#### **PR #4: VQ-VAE Core Model (raw-count, NB/ZINB)**
+- **Scope**: encoder/decoder, count likelihoods, size-factor + covariate
+  conditioning, loss composition (recon + VQ).
+- **Files**: `models/vqvae.py`, `models/likelihoods.py`.
+- **Exit criteria**: 2-epoch smoke test on synthetic counts; NB and ZINB heads
+  both train; codebooks are utilized (non-trivial perplexity).
 
-#### **PR #5: Training CLI & Configuration**
-- **Scope**: OmegaConf-based configuration, Rich progress bars
-- **Files**: `train/cli.py`, configuration schemas
-- **Exit Criteria**: CLI trains toy model in < 2 minutes
-- **Key Features**:
-  - Memory-efficient training loop
-  - Automatic batch size optimization
-  - CPU/GPU compatibility
+#### **PR #5: Training/Fine-tuning CLI + W&B**
+- **Scope**: OmegaConf config, typer CLI, training loop, W&B tracking, toy
+  fine-tuning from a checkpoint.
+- **Files**: `train/cli.py`, `train/loop.py`, `utils/tracking.py`, config
+  schemas.
+- **Exit criteria**: CLI trains a toy model from Census *and* from a local
+  `.h5ad` in minutes; runs log to W&B (and work offline).
 
-#### **PR #6: HuggingFace Integration**
-- **Scope**: Model serialization, hub upload/download
-- **Files**: `hf_utils.py`, model serialization
-- **Exit Criteria**: Model appears on HF test repository
-- **Key Features**:
-  - Efficient model serialization
-  - Metadata preservation
-  - Version management
+#### **PR #6: HuggingFace Hub Integration**
+- **Scope**: serialize/deserialize model + codebooks + config; push/pull.
+- **Files**: `hf_utils.py`.
+- **Exit criteria**: a trained model round-trips through a HF test repo.
 
-### **Phase 3: Production (PRs 7-10)**
+### **Phase 3: Latent API, Examples & Release (PRs 7–10)**
 
-#### **PR #7: Examples & Documentation**
-- **Scope**: Jupyter notebooks, Sphinx documentation
-- **Files**: `examples/`, comprehensive docs
-- **Exit Criteria**: RTD build passes, examples run successfully
+#### **PR #7: Discrete-Code Inference API**
+- **Scope**: `encode(adata) → discrete codes` and
+  `decode(codes) → expression`; the universal-latent use cases (compression,
+  generation, plugging codes into the decoder).
+- **Files**: `inference/codes.py`.
+- **Exit criteria**: round-trip encode→decode on held-out cells; documented
+  code-vector format.
 
-#### **PR #8: Performance & Scaling**
-- **Scope**: Dask cluster support, benchmarking
-- **Files**: Scaling utilities, benchmarking scripts
-- **Exit Criteria**: Benchmark report shows linear scaling
+#### **PR #8: Examples & Documentation**
+- **Scope**: notebooks (Census streaming, local fine-tuning, code
+  inspection/generation), Sphinx docs.
+- **Exit criteria**: docs build; examples run on small data.
 
-#### **PR #9: Pre-v1 Polish**
-- **Scope**: mypy strict mode, contribution guidelines
-- **Files**: Type annotations, developer docs
-- **Exit Criteria**: Release pipeline passes all checks
+#### **PR #9: Benchmarking & Scaling**
+- **Scope**: raw-count+NB vs log-normalized+Gaussian comparison; codebook
+  config sweeps; streaming throughput/scaling.
+- **Exit criteria**: benchmark report (reconstruction, codebook utilization,
+  downstream separability, throughput).
 
 #### **PR #10: v1.0 Release**
-- **Scope**: API freeze, final testing, announcement
-- **Exit Criteria**: PyPI 1.0.0 release, complete documentation
+- **Scope**: API freeze, final docs, PyPI release.
+- **Exit criteria**: PyPI 1.0.0, complete documentation.
 
 ## 🧪 **Development Workflow**
 
 ### **Testing Strategy**
-- **Unit Tests**: pytest with 90%+ coverage requirement
-- **Integration Tests**: Full pipeline tests with real data
-- **Performance Tests**: Memory usage and speed benchmarks
-- **Smoke Tests**: < 10 second execution time
+- **Unit tests**: pytest with a high coverage requirement; tiny synthetic/
+  fixture datasets so tests stay fast and offline.
+- **Integration tests**: end-to-end loader → model → loss on small fixtures.
+- **Network-gated tests**: live Census streaming tests marked and skippable
+  (CI runs offline by default).
 
 ### **Code Quality Standards**
-- **Type Hints**: Strict mypy configuration
-- **Docstrings**: NumPy style for all public APIs
-- **Formatting**: Black + isort + flake8
-- **Security**: Bandit scanning for dependencies
-
-### **AI-First Development**
-- **Cursor Integration**: Optimized for AI assistance
-- **Clean Architecture**: SOLID principles throughout
-- **Comprehensive Logging**: Rich debugging information
-- **Test-Driven Development**: Tests before implementation
+- **Type hints**: strict mypy (enabled in CI).
+- **Docstrings**: NumPy style for public APIs.
+- **Formatting**: black + isort + flake8.
+- **Security**: bandit + safety scanning.
 
 ## 📋 **Dependencies**
 
-### **Core Dependencies**
+### **Core (planned, added as the implementing PRs land)**
 ```toml
 dependencies = [
-    "torch>=2.0.0",           # Deep learning framework
-    "anndata>=0.8.0",         # Omics data structure
-    "zarr>=2.12.0",           # Chunked array storage
-    "dask[array]>=2023.1.0",  # Parallel computing
-    "scanpy>=1.9.0",          # Single-cell analysis
-    "numpy>=1.21.0",          # Numerical computing
-    "pandas>=1.5.0",          # Data manipulation
-    "scipy>=1.9.0",           # Scientific computing
-    "transformers>=4.20.0",   # HuggingFace integration
-    "omegaconf>=2.3.0",       # Configuration management
-    "rich>=13.0.0",           # Rich terminal output
-    "typer>=0.9.0",           # CLI framework
+    "torch>=2.0.0",            # Deep learning framework
+    "anndata>=0.8.0",          # Omics data structure
+    "numpy>=1.21.0",
+    "pandas>=1.5.0",
+    "scipy>=1.9.0",
+    "zarr>=2.12.0",            # Chunked array storage (local .zarr)
+    # --- CELLxGENE Census streaming (PR #2) ---
+    "cellxgene-census>=1.15.0",
+    "tiledbsoma>=1.12.0",
+    "tiledbsoma-ml>=0.1.0",
+    # --- Modeling / training / tracking ---
+    "transformers>=4.20.0",    # HuggingFace integration
+    "huggingface-hub>=0.20.0",
+    "omegaconf>=2.3.0",        # Configuration management
+    "typer>=0.9.0",            # CLI framework
+    "rich>=13.0.0",            # Rich terminal output
+    "wandb>=0.16.0",           # Experiment tracking
 ]
 ```
+> The current `pyproject.toml` still lists the original/foundation
+> dependencies; Census/W&B-specific entries are added (with a refreshed
+> `uv.lock`) in the PRs that first use them, to avoid premature lock churn.
 
-### **Development Dependencies**
-- **Testing**: pytest, hypothesis, pytest-cov
-- **Quality**: black, isort, flake8, mypy, bandit
-- **Docs**: sphinx, jupyter, nbsphinx
+### **Development**
+- **Testing**: pytest, pytest-cov
+- **Quality**: black, isort, flake8, mypy, bandit, safety
+- **Docs**: sphinx, jupyter
 - **CI/CD**: pre-commit, GitHub Actions
 
 ## 🎯 **Success Metrics**
-
-### **Performance Targets**
-- **Memory**: < 16GB for 100GB datasets
-- **Speed**: < 10 min/epoch for 100K cells (GPU)
-- **Coverage**: > 90% test coverage
-- **Type Safety**: 100% mypy compliance
-
-### **User Experience Goals**
-- **Installation**: `pip install oqae` → working in < 5 minutes
-- **Learning Curve**: First model trained in < 30 minutes
-- **Integration**: Drop-in replacement for existing workflows
-- **Documentation**: Complete examples for all use cases
+- **Scale**: train over Census-scale corpora by streaming, bounded host memory.
+- **Coverage**: high test coverage on implemented modules.
+- **Type Safety**: strict mypy compliance (CI-enforced).
+- **Latent quality**: well-utilized codebooks (healthy perplexity, no
+  collapse); faithful encode→decode reconstruction; meaningful structure in the
+  discrete space.
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
-
-### **Advanced Features**
-- **Multi-modal VQ-VAE**: Joint training across modalities
-- **Distributed Training**: Dask cluster optimization
-- **Advanced Metrics**: Batch mixing, biological preservation
-- **Auto-tuning**: Hyperparameter optimization
-
-### **Ecosystem Integration**
-- **Scanpy Plugin**: Native scanpy tool integration
-- **Bioconductor Bridge**: R package for broader adoption
-- **Cloud Deployment**: Docker containers, Kubernetes support
-- **Benchmark Suite**: Standardized evaluation metrics
+- **Other omics modalities**: extend the discrete-codebook approach beyond
+  scRNA-seq (ATAC, protein, multi-omics joint training).
+- **Foundation-model use**: treat the codebook as a token vocabulary for
+  downstream sequence models.
+- **Distributed streaming/training**; **auto-tuning** of codebook/architecture.
+- **Scanpy/ecosystem integration**; standardized evaluation suite.
 
 ## 📞 **Contact & Contribution**
-
-- **License**: MIT (academic/commercial friendly)
+- **License**: MIT
 - **Repository**: https://github.com/mengerj/oqae
-- **Documentation**: (To be set up with Sphinx)
-- **Issues**: GitHub issue tracker for bugs/features
+- **Issues**: GitHub issue tracker
 
 ---
 
-**Last Updated**: Initial version created during project setup
-**Next Review**: After PR #3 completion
+**Last Updated**: 2026-06-17 — pivot to CELLxGENE Census streaming, raw-count
+(NB/ZINB) modeling, discrete universal latent space, and W&B-based monitoring.
+**Next Review**: After PR #2 (data layer).

@@ -1,6 +1,10 @@
 # 🧬 OQAE: Omics Quantized Auto Encoder
 
-A lightweight VQ-VAE library for large-scale omics data analysis with memory-efficient processing and HuggingFace Hub integration.
+A lightweight VQ-VAE library that learns a **discrete, universal latent space**
+for single-cell omics. Every scRNA-seq cell is represented as a set of discrete
+code vectors that can be plugged back into the trained decoder to reconstruct or
+generate expression — trained at scale by **streaming the CZ CELLxGENE Census**,
+or fine-tuned on your own AnnData.
 
 [![CI](https://github.com/mengerj/oqae/actions/workflows/ci.yml/badge.svg)](https://github.com/mengerj/oqae/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mengerj/oqae/branch/main/graph/badge.svg)](https://codecov.io/gh/mengerj/oqae)
@@ -9,13 +13,21 @@ A lightweight VQ-VAE library for large-scale omics data analysis with memory-eff
 
 ## ✨ Features
 
-- 🧬 **Omics-Optimized**: Designed specifically for single-cell and multi-omics data
-- 💾 **Memory Efficient**: Handle 100GB+ datasets with 16GB RAM via Zarr/Dask
+- 🧩 **Discrete Universal Latent Space**: Encode each cell as a set of discrete
+  codes from shared codebooks — composable and decoder-pluggable
+- 🌍 **Train by Streaming**: Stream millions of cells directly from the
+  [CZ CELLxGENE Census](https://chanzuckerberg.github.io/cellxgene-census/) via
+  TileDB-SOMA — no full-corpus download
+- 📁 **Bring Your Own Data**: Train or fine-tune on local `.h5ad` / `.zarr`
+  AnnData with the same interface
+- 🔢 **Raw Counts In, Counts Out**: Model raw counts directly with a Negative
+  Binomial / Zero-Inflated NB likelihood — no mandatory external normalization
 - 🔄 **Residual Quantization**: Configurable VQ-VAE with multiple codebook layers
-- 🤗 **HuggingFace Integration**: Seamless model sharing and versioning
-- ⚡ **CPU/GPU Compatible**: Inference on CPU, training optimized for GPU
-- 📊 **Scanpy Integration**: Drop-in compatibility with existing workflows
-- 🔧 **Production Ready**: 90%+ test coverage, strict typing, comprehensive CI/CD
+- 🧪 **Generative Decoder**: Feed discrete codes to the decoder to reconstruct or
+  generate expression profiles
+- 🤗 **HuggingFace Integration**: Model + codebook sharing and versioning
+- 📈 **W&B Tracking**: Experiment tracking with Weights & Biases (offline-friendly)
+- 🔧 **Production Ready**: strict typing (mypy), high test coverage, comprehensive CI/CD
 
 ## 🚀 Quick Start
 
@@ -32,64 +44,97 @@ A lightweight VQ-VAE library for large-scale omics data analysis with memory-eff
 pip install oqae
 ```
 
-### Basic Usage
+### Planned Usage (API in development)
+
+> ⚠️ The library is in early development — the API below illustrates the target
+> design and is **not yet implemented**. Track progress in
+> [PROJECT_PLAN.md](docs/PROJECT_PLAN.md).
 
 ```python
 from omvqvae import VQVAEModel
-from omvqvae.data import load_zarr_anndata
+from omvqvae.data import census_dataloader, anndata_dataloader
 
-# Load large dataset efficiently
-adata = load_zarr_anndata("path/to/large_dataset.zarr")
-
-# Initialize model with memory-efficient settings
-model = VQVAEModel(
-    n_layers=2,
-    codebook_size=512,
-    memory_efficient=True
+# Option A: stream raw counts directly from the CZ CELLxGENE Census
+loader = census_dataloader(
+    census_version="2025-01-30",
+    obs_query="tissue_general == 'blood' and is_primary_data == True",
+    batch_size=512,
 )
 
-# Train with automatic batch size optimization
-model.fit(adata, batch_key="batch_id")
+# Option B: train / fine-tune on a local AnnData file (.h5ad or .zarr)
+# loader = anndata_dataloader("path/to/data.h5ad", batch_size=512)
 
-# Save to HuggingFace Hub
+# Model consumes RAW counts; normalization happens internally
+model = VQVAEModel(
+    n_codebooks=2,        # residual quantization levels
+    codebook_size=512,
+    likelihood="nb",      # negative binomial (or "zinb" / "gaussian")
+)
+model.fit(loader)
+
+# Encode any cell to its discrete codes, and decode codes back to expression
+codes = model.encode(adata)          # set of discrete code vectors per cell
+expression = model.decode(codes)     # plug codes into the decoder
+
+# Share the trained model + codebooks
 model.push_to_hub("username/my-omics-model")
 ```
 
 ## 📋 Current Status
 
-**🏗️ Under Active Development** - Following a structured 10-PR roadmap:
+**🏗️ Under Active Development** — following the roadmap in
+[PROJECT_PLAN.md](docs/PROJECT_PLAN.md):
 
-- ✅ **PR #1**: Project setup and logging infrastructure
-- ⏳ **PR #2**: Data I/O and preprocessing (Zarr/Dask integration)
-- ⏳ **PR #3**: Residual quantization layers
-- ⏳ **PR #4**: Core VQ-VAE model
-- ⏳ **PR #5**: Training CLI and configuration
+- ✅ **PR #1**: Project setup, logging, and CI/CD (incl. strict mypy)
+- ⏳ **PR #2**: Data layer — CELLxGENE Census streaming + local AnnData
+- ⏳ **PR #3**: Residual vector-quantizer layer
+- ⏳ **PR #4**: Core VQ-VAE model (raw-count NB/ZINB)
+- ⏳ **PR #5**: Training/fine-tuning CLI + W&B tracking
 - ⏳ **PR #6**: HuggingFace Hub integration
-
-See [PROJECT_PLAN.md](PROJECT_PLAN.md) for detailed roadmap and architecture decisions.
+- ⏳ **PR #7**: Discrete-code inference/generation API
 
 ## 🏗️ Architecture Overview
 
-### Memory Management Strategy
-- **Zarr-First**: Primary storage for large datasets
-- **Dask Integration**: Lazy evaluation with configurable chunking
-- **Memory Mapping**: Efficient data access patterns
-- **16GB Target**: Support 100GB+ datasets on modest hardware
+### Goal
+Learn a **discrete, universal latent space** for omics. Each scRNA-seq cell maps
+to a set of discrete codes drawn from shared codebooks; the generative decoder
+turns codes back into expression — enabling compression, integration, and
+in-silico generation from a common vocabulary. We start with scRNA-seq (the
+modality CELLxGENE hosts) and design for other omics later.
+
+### Data Sources
+- **CZ CELLxGENE Census (streaming)**: primary training data via TileDB-SOMA
+  (`cellxgene_census` + `tiledbsoma` + `tiledbsoma-ml`), streamed in batches.
+- **Local AnnData (`.h5ad` / `.zarr`)**: train or fine-tune on your own data;
+  larger-than-memory files read in chunks.
+
+### Input Modeling
+Raw counts go in directly. The decoder uses a count likelihood (Negative
+Binomial / Zero-Inflated NB) with library-size handled internally — following
+modern single-cell VAEs (scVI family). The encoder applies an internal log1p for
+numerical stability; no external normalization pipeline is required.
 
 ### Data Flow
 ```
-Raw Data → AnnData(.h5ad) → Zarr Backend → Dask Arrays → VQ-VAE Model → HF Hub
+CELLxGENE Census (TileDB-SOMA) ─┐
+                                ├─► Streaming DataLoader ─► raw counts
+Local AnnData (.h5ad / .zarr) ──┘                              │
+                                                               ▼
+        Encoder ─► Residual VQ (discrete codes) ─► Decoder ─► NB/ZINB → counts
+                                                       │
+                                                W&B experiment tracking
 ```
 
 ### Package Structure
 ```
 src/omvqvae/
 ├── __init__.py
-├── data/              # AnnData/Zarr I/O operations
-├── layers/            # Residual quantization layers
-├── models/            # VQ-VAE model implementations
-├── train/             # Training CLI interface
-├── utils/             # Logging and memory utilities
+├── data/              # Census streaming + local AnnData loaders
+├── layers/            # Residual vector-quantization layers
+├── models/            # VQ-VAE model + NB/ZINB likelihoods
+├── train/             # Training/fine-tuning CLI + loop (W&B)
+├── inference/         # encode → codes; decode codes → expression
+├── utils/             # Logging and experiment-tracking utilities
 └── hf_utils.py        # HuggingFace Hub integration
 ```
 
@@ -146,21 +191,13 @@ make pr
 | `make ci` | Run full CI pipeline locally |
 | `make format` | Format code (black + isort) |
 | `make lint` | Run linting (flake8) |
-| `make type-check` | Run type checking (currently disabled) |
+| `make type-check` | Run type checking (mypy strict) |
 | `make workflow-status` | Check GitHub Actions workflow status |
 | `make auto-fix` | Automatically fix workflow failures |
 
-### ⚠️ Known Issues
-
-**Type Checking (mypy) Temporarily Disabled**
-- Issue: Module conflict between `src.omvqvae.utils.logging` and `omvqvae.utils.logging`
-- Cause: Editable package installation creates duplicate module paths
-- Status: Both local and GitHub CI skip mypy until resolved
-- Workaround: Manual type checking with specific files if needed
-
 ## 📚 Documentation
 
-- [PROJECT_PLAN.md](PROJECT_PLAN.md) - Complete project roadmap and architecture
+- [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) - Complete project roadmap and architecture
 - [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) - Development guidelines
 - [docs/WORKFLOW_MONITORING.md](docs/WORKFLOW_MONITORING.md) - CI/CD monitoring
 
@@ -168,10 +205,10 @@ make pr
 
 We welcome contributions! This project follows a structured development approach:
 
-1. **Check the roadmap** in [PROJECT_PLAN.md](PROJECT_PLAN.md)
+1. **Check the roadmap** in [PROJECT_PLAN.md](docs/PROJECT_PLAN.md)
 2. **Create an issue** for new features or bugs
 3. **Follow the development workflow** with TDD and quality checks
-4. **Ensure 90%+ test coverage** for new code
+4. **Maintain high test coverage** for new code
 5. **Add comprehensive docstrings** (NumPy style)
 
 ## 📄 License
@@ -181,11 +218,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - Built with the [Cursor AI Python Template](https://github.com/mengerj/cursor-python-template)
-- Inspired by modern omics analysis tools like Scanpy and AnnData
-- Leverages the power of VQ-VAE for representation learning
+- Data streaming powered by the [CZ CELLxGENE Census](https://chanzuckerberg.github.io/cellxgene-census/) and TileDB-SOMA
+- Count-likelihood modeling inspired by the [scVI](https://scvi-tools.org/) family of single-cell VAEs
+- Built on the AnnData ecosystem; leverages VQ-VAE for discrete representation learning
 
 ---
 
 **Status**: Early development (PR #1 completed)
-**Target**: Production-ready v1.0 by Q2 2024
 **Contact**: [GitHub Issues](https://github.com/mengerj/oqae/issues)
