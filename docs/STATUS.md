@@ -23,8 +23,8 @@
   - `data/anndata_io.py` — local `.h5ad` / `.zarr` loaders +
     `build_anndata_dataloader` producing the shared `Minibatch` contract.
   - Human *and* mouse AnnData iterate through the *same* DataLoader API.
-  - Pinned `zarr>=2.12.0,<3` (anndata does not support zarr-python v3) and
-    refreshed `uv.lock`. Tests are 100%-covered and fully offline. `make ci`
+  - Requires `zarr>=3.0.0` + `anndata>=0.12.0` (zarr-python v3 support);
+    `uv.lock` refreshed. Tests are 100%-covered and fully offline. `make ci`
     green.
 - Plan/docs reflect the pivot: Census streaming, raw-count NB/ZINB modeling,
   discrete universal latent space, human+mouse, v1 unconditional, W&B monitoring.
@@ -74,9 +74,9 @@ CI green; PR opened.
   `data/dataset.py` (`GeneVocabulary`, `align_to_reference`, `Minibatch`,
   `CountsDataset`, `collate_minibatch`), `data/anndata_io.py`
   (`.h5ad`/`.zarr` loaders + `build_anndata_dataloader`). Human *and* mouse
-  iterate the same DataLoader API. Pinned `zarr<3` and refreshed `uv.lock`.
-  100% coverage, fully offline, `make ci` green. Census streaming deferred to
-  slice 2.
+  iterate the same DataLoader API. Standardized on `zarr>=3` + `anndata>=0.12`
+  and refreshed `uv.lock`. 100% coverage, fully offline, `make ci` green.
+  Census streaming deferred to slice 2.
 - **2026-06-17** — PR #5 merged: project pivot (Census streaming, raw-count
   NB/ZINB, discrete latent), cleanup (removed template/system_monitor code),
   strict mypy re-enabled. Added CLAUDE.md + this STATUS.md; clarified
