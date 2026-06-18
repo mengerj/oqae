@@ -218,7 +218,10 @@ src/omvqvae/
   (black/isort/flake8/**mypy**/pytest/bandit), pre-commit, Makefile.
 - Exit criteria: green CI, package imports a logger, strict mypy passes.
 
-#### **PR #2: Data Layer — Census streaming + local AnnData (NEXT)**
+#### **PR #2: Data Layer — Census streaming + local AnnData (IN PROGRESS)**
+- **Status**: split into two slices. *Slice 1 (local AnnData + organism-aware
+  gene alignment + normalization + shared `Minibatch` contract) is DONE.* Slice 2
+  (Census streaming via TileDB-SOMA, network-gated test) is next.
 - **Scope**: unified data interface over two sources, **organism-aware
   (human + mouse)**.
 - **Files**: `data/census.py`, `data/anndata_io.py`, `data/dataset.py`,
@@ -364,6 +367,9 @@ A running record of decisions so future sessions don't re-litigate them.
 | 2026-06-17 | **Multi-organism: support human + mouse**, organism-aware with a per-organism gene space; **one model per organism in v1**. Cross-organism unification deferred. | Each organism has a distinct gene universe; ortholog/shared-embedding mapping is a separate research question. |
 | 2026-06-17 | **v1 model is unconditional** (no batch/covariate input). Revisit only if benchmarking shows batch effects hurt the latent space. | Keep v1 simple; data layer still carries covariates so conditioning can be added later without a format change. |
 | 2026-06-17 | **Next implementation = PR #2 (data layer).** | Unblocks the quantizer and model PRs. |
+| 2026-06-18 | **Split PR #2 into two slices**: (1) local AnnData + organism-aware gene alignment + normalization + shared `Minibatch` contract (offline-testable, no heavy deps); (2) Census streaming (TileDB-SOMA deps + network-gated test). Slice 1 landed first. | Keeps each PR focused and fully CI-verifiable offline; the Census path needs heavy deps and a live network it can't exercise in CI, so it slots into the contract slice 1 establishes. |
+| 2026-06-18 | **Pin `zarr>=2.12.0,<3`.** | `anndata` (0.11.x) does not yet support zarr-python v3; an unconstrained `zarr>=2.12.0` resolved to 3.x and broke `import anndata`. |
+| 2026-06-18 | **Minibatch contract = `Minibatch(counts, size_factors, covariates)`** as a dataclass; per-cell samples are dicts (`counts`, `size_factor`, `organism`, `batch`) stacked by `collate_minibatch`. Covariates always carry `organism` + `batch`. | One contract shared by every source (local now, Census next); v1 ignores covariates but they travel with the batch so conditioning can be added without a format change. |
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
 - **Other omics modalities**: extend the discrete-codebook approach beyond

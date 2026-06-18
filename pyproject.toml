@@ -24,7 +24,7 @@ requires-python = ">=3.11"
 dependencies = [
     "torch>=2.0.0",
     "anndata>=0.8.0",
-    "zarr>=2.12.0",
+    "zarr>=2.12.0,<3",  # anndata does not yet support zarr-python v3
     "dask[array]>=2023.1.0",
     "numpy>=1.21.0",
     "pandas>=1.5.0",
@@ -99,6 +99,11 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_equality = true
+
+[[tool.mypy.overrides]]
+# Third-party libraries without bundled type stubs.
+module = ["anndata.*", "scipy.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
