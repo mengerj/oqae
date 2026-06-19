@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-18
+**Last updated:** 2026-06-19
 
 ## Current state
 
@@ -14,47 +14,47 @@
   - Template leftovers and the old `system_monitor` utility have been removed.
   - `pyproject.toml` core deps trimmed; `wandb` kept for tracking.
   - `make ci` is green; pytest at 100% coverage on the current (small) codebase.
-- **PR #2 (data layer) — slice 1 of 2 DONE (this PR), Census slice next.**
-  - `data/normalize.py` — size factors + internal log1p/depth normalization.
-  - `data/dataset.py` — organism-aware `GeneVocabulary`, `align_to_reference`
-    (zero-fill missing / drop extra / warn on low overlap), the shared
-    `Minibatch` `(counts, size_factors, covariates)` contract, `CountsDataset`,
-    `collate_minibatch`.
-  - `data/anndata_io.py` — local `.h5ad` / `.zarr` loaders +
-    `build_anndata_dataloader` producing the shared `Minibatch` contract.
-  - Human *and* mouse AnnData iterate through the *same* DataLoader API.
-  - Requires `zarr>=3.0.0` + `anndata>=0.12.0` (zarr-python v3 support);
-    `uv.lock` refreshed. Tests are 100%-covered and fully offline. `make ci`
-    green.
+- **PR #2 (data layer) — DONE (both slices).**
+  - Slice 1 (merged): `data/normalize.py` (size factors + internal log1p/depth
+    normalization), `data/dataset.py` (organism-aware `GeneVocabulary`,
+    `align_to_reference`, the shared `Minibatch`
+    `(counts, size_factors, covariates)` contract, `CountsDataset`,
+    `collate_minibatch`), `data/anndata_io.py` (local `.h5ad` / `.zarr` loaders +
+    `build_anndata_dataloader`). Human *and* mouse AnnData iterate one API.
+  - Slice 2 (this PR): `data/census.py` — streams raw counts from the CELLxGENE
+    Census via `cellxgene_census` + `tiledbsoma` + `tiledbsoma_ml`
+    (`ExperimentDataset` + `experiment_dataloader()`), behind the *same*
+    `Minibatch` contract. `organism` selects the `homo_sapiens` / `mus_musculus`
+    experiment; `obs_value_filter` / `var_value_filter` slice cells/genes; the
+    raw layer is read; the per-organism reference defaults to the Census `var`
+    index. `CensusMinibatchLoader` adapts the streamed `(X, obs)` chunks to
+    `Minibatch`; `census_chunk_to_minibatch` is the offline-tested glue.
+  - Added deps `cellxgene-census`, `tiledbsoma`, `tiledbsoma-ml`; `uv.lock`
+    refreshed. Pinned default Census release `DEFAULT_CENSUS_VERSION =
+    "2025-11-08"` (newest LTS). Offline tests at 100% coverage; a `network`-marked
+    live test streams **human and mouse** end-to-end (skipped by default,
+    verified passing live this run). `make ci` green.
 - Plan/docs reflect the pivot: Census streaming, raw-count NB/ZINB modeling,
   discrete universal latent space, human+mouse, v1 unconditional, W&B monitoring.
 
-## Next task — PR #2 slice 2: Census streaming
+## Next task — PR #3: Residual Vector Quantizer layer
 
-Finish the data layer by adding the CELLxGENE Census source behind the *same*
-`Minibatch` contract already established in slice 1.
+With the data layer complete, build the discrete bottleneck.
 
-1. Add deps and refresh the lockfile: `cellxgene-census`, `tiledbsoma`,
-   `tiledbsoma-ml` (`uv lock`). Confirm the newest stable Census version and pin
-   it (latest known stable was `2025-01-30`).
-2. `data/census.py` — stream raw counts from the Census via
-   `cellxgene_census` + `tiledbsoma` + `tiledbsoma_ml`
-   (`ExperimentDataset` + `experiment_dataloader()`), with `organism`
-   selecting `homo_sapiens` / `mus_musculus`, `obs_query` filtering, raw layer.
-   Reuse `GeneVocabulary` / `align_to_reference` and emit `Minibatch` (build the
-   per-organism reference gene set from the Census `var` index).
-3. Tests: tiny **offline** synthetic fixtures for the alignment/contract glue;
-   mark the live-Census streaming test skippable (network-gated). Keep `make ci`
-   green (strict mypy, coverage).
+1. `layers/residual_vq.py` — a configurable residual VQ module: `n_codebooks`
+   (default 2), codebook size/dim, straight-through estimator for gradient flow,
+   commitment + codebook losses, and EMA / dead-code reset option.
+2. Expose per-forward metrics for monitoring: codebook **perplexity** /
+   utilization and quantization loss, so PR #5's W&B logging and PR #9's
+   collapse checks have them.
+3. Tests (offline, synthetic): shapes/dtypes, gradient flow through the
+   straight-through estimator, that codebooks are utilized (non-trivial
+   perplexity), and that EMA/reset paths run. Keep `make ci` green (strict mypy,
+   coverage).
 
-**Definition of done:** stream a small Census slice (human *and* mouse) through
-the same `build_*` DataLoader API as local AnnData; live test marked skippable;
-CI green; PR opened.
-
-> Note: this run deliberately split PR #2. Slice 1 (local AnnData + alignment +
-> normalization + contract) is fully offline-testable and lands here; slice 2
-> (Census streaming) carries the heavy TileDB-SOMA deps and a network-gated test
-> and is the next chunk — see PROJECT_PLAN.md decisions log.
+**Definition of done:** a residual VQ layer that quantizes encoder outputs to a
+set of codebook indices, returns quantized vectors + indices + losses + metrics,
+back-props through the bottleneck; offline tests; CI green; PR opened.
 
 ## Open questions / parked
 
@@ -64,11 +64,26 @@ CI green; PR opened.
   both; benchmark in PR #9.
 - **Batch-effect conditioning**: v1 unconditional; benchmark whether it's needed
   (PR #9) before adding.
-- **Census version pin**: latest stable is `2025-01-30`; confirm the newest
-  stable at implementation time and pin it.
+- **Census version pin**: now `DEFAULT_CENSUS_VERSION = "2025-11-08"` (newest LTS
+  at implementation time). Bump when a newer LTS lands; it is a configurable
+  arg, so callers can override per run.
+- **Census gene panel size**: the default reference is the *full* Census `var`
+  index (~tens of thousands of genes per organism). PR #4/#9 may want a curated
+  highly-variable-gene panel via `var_value_filter`; left to the model PRs.
 
 ## Changelog (most recent first)
 
+- **2026-06-19** — PR #2 slice 2: CELLxGENE Census streaming. Added
+  `data/census.py` (`open_census`, `census_gene_vocabulary`,
+  `census_chunk_to_minibatch`, `CensusMinibatchLoader`,
+  `build_census_dataloader`) streaming raw counts via TileDB-SOMA
+  (`ExperimentDataset` + `experiment_dataloader`) behind the shared `Minibatch`
+  contract; organism-aware (human + mouse), `obs`/`var` value-filterable, raw
+  layer. Added deps `cellxgene-census`/`tiledbsoma`/`tiledbsoma-ml` and refreshed
+  `uv.lock`; pinned `DEFAULT_CENSUS_VERSION = "2025-11-08"`. Registered a
+  `network` pytest marker (skipped by default via `addopts`); offline glue tests
+  at 100% coverage plus a live human+mouse streaming test (verified passing).
+  `make ci` green. **PR #2 is now complete.**
 - **2026-06-18** — PR #2 slice 1: organism-aware **local** data layer. Added
   `data/normalize.py` (size factors + internal log1p/depth normalization),
   `data/dataset.py` (`GeneVocabulary`, `align_to_reference`, `Minibatch`,
