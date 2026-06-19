@@ -2,15 +2,21 @@
 Data layer for OQAE.
 
 Organism-aware loading of raw single-cell counts onto a shared minibatch
-contract. This slice covers local AnnData (``.h5ad`` / ``.zarr``) plus the
-gene-space alignment, normalization, and minibatch primitives; CELLxGENE Census
-streaming lands next, reusing the same :class:`Minibatch` contract.
+contract. This covers local AnnData (``.h5ad`` / ``.zarr``) and CELLxGENE Census
+streaming (TileDB-SOMA), plus the gene-space alignment, normalization, and
+minibatch primitives — every source reuses the same :class:`Minibatch` contract.
 """
 
 from omvqvae.data.anndata_io import (
     build_anndata_dataloader,
     extract_counts,
     load_anndata,
+)
+from omvqvae.data.census import (
+    CensusMinibatchLoader,
+    build_census_dataloader,
+    census_batch_to_minibatch,
+    gene_vocabulary_from_var,
 )
 from omvqvae.data.dataset import (
     SUPPORTED_ORGANISMS,
@@ -42,4 +48,9 @@ __all__ = [
     "load_anndata",
     "extract_counts",
     "build_anndata_dataloader",
+    # CELLxGENE Census streaming
+    "census_batch_to_minibatch",
+    "gene_vocabulary_from_var",
+    "CensusMinibatchLoader",
+    "build_census_dataloader",
 ]

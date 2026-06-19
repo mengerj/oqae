@@ -218,10 +218,10 @@ src/omvqvae/
   (black/isort/flake8/**mypy**/pytest/bandit), pre-commit, Makefile.
 - Exit criteria: green CI, package imports a logger, strict mypy passes.
 
-#### **PR #2: Data Layer — Census streaming + local AnnData (IN PROGRESS)**
-- **Status**: split into two slices. *Slice 1 (local AnnData + organism-aware
-  gene alignment + normalization + shared `Minibatch` contract) is DONE.* Slice 2
-  (Census streaming via TileDB-SOMA, network-gated test) is next.
+#### **PR #2: Data Layer — Census streaming + local AnnData — ✅ DONE**
+- **Status**: both slices landed. *Slice 1 (local AnnData + organism-aware gene
+  alignment + normalization + shared `Minibatch` contract)* and *Slice 2
+  (Census streaming via TileDB-SOMA with a network-gated live test)* are DONE.
 - **Scope**: unified data interface over two sources, **organism-aware
   (human + mouse)**.
 - **Files**: `data/census.py`, `data/anndata_io.py`, `data/dataset.py`,
@@ -371,6 +371,8 @@ A running record of decisions so future sessions don't re-litigate them.
 | 2026-06-18 | ~~**Pin `zarr>=2.12.0,<3`.**~~ Superseded same day (see next row). | `anndata` (0.11.x) did not support zarr-python v3; an unconstrained `zarr>=2.12.0` resolved to 3.x and broke `import anndata`. |
 | 2026-06-18 | **Require `zarr>=3.0.0` + `anndata>=0.12.0`** (reverses the `zarr<3` pin above). | `anndata` 0.12 adds zarr-python v3 support; standardize on zarr v3 rather than holding back on the v2 line. |
 | 2026-06-18 | **Minibatch contract = `Minibatch(counts, size_factors, covariates)`** as a dataclass; per-cell samples are dicts (`counts`, `size_factor`, `organism`, `batch`) stacked by `collate_minibatch`. Covariates always carry `organism` + `batch`. | One contract shared by every source (local now, Census next); v1 ignores covariates but they travel with the batch so conditioning can be added without a format change. |
+| 2026-06-19 | **Census deps are core (not optional extras)** — `cellxgene-census`, `tiledbsoma`, `tiledbsoma-ml`; Census version pinned to `2025-01-30`. Heavy TileDB-SOMA imports are **lazy** (inside functions) and the contract glue is split out so it is offline-testable; the live streaming path is network-gated (`OQAE_RUN_CENSUS_TESTS=1`). | Census is the *primary* streaming source, so it belongs in the base install; lazy imports keep `import omvqvae` light and let CI test the alignment/orchestration with the TileDB-SOMA stack faked. |
+| 2026-06-19 | **Census loader returns a `CensusMinibatchLoader`** (an iterable/context-manager that maps `tiledbsoma_ml` `(X, obs)` batches → `Minibatch`) rather than a raw `torch.DataLoader`. | `tiledbsoma_ml` owns its `IterableDataset`/collation; a thin mapping wrapper preserves the shared "iterate → `Minibatch`" API without fighting that ownership, and lets us close Census handles deterministically. |
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
 - **Other omics modalities**: extend the discrete-codebook approach beyond
@@ -389,5 +391,5 @@ A running record of decisions so future sessions don't re-litigate them.
 
 **Last Updated**: 2026-06-17 — clarified multi-organism (human + mouse) support,
 v1-unconditional decision, and added the design-decisions log.
-**Current Focus**: PR #2 — organism-aware data layer (see `docs/STATUS.md`).
-**Next Review**: After PR #2 (data layer).
+**Current Focus**: PR #3 — residual vector-quantizer layer (see `docs/STATUS.md`).
+**Next Review**: After PR #3 (residual VQ layer).
