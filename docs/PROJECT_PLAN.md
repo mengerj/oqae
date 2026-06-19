@@ -218,10 +218,11 @@ src/omvqvae/
   (black/isort/flake8/**mypy**/pytest/bandit), pre-commit, Makefile.
 - Exit criteria: green CI, package imports a logger, strict mypy passes.
 
-#### **PR #2: Data Layer — Census streaming + local AnnData (IN PROGRESS)**
-- **Status**: split into two slices. *Slice 1 (local AnnData + organism-aware
-  gene alignment + normalization + shared `Minibatch` contract) is DONE.* Slice 2
-  (Census streaming via TileDB-SOMA, network-gated test) is next.
+#### **PR #2: Data Layer — Census streaming + local AnnData — ✅ DONE**
+- **Status**: complete. *Slice 1* (local AnnData + organism-aware gene alignment +
+  normalization + shared `Minibatch` contract) merged; *Slice 2* (Census
+  streaming via TileDB-SOMA with a network-gated live test) landed in
+  `data/census.py`. Both human and mouse stream through the same loader API.
 - **Scope**: unified data interface over two sources, **organism-aware
   (human + mouse)**.
 - **Files**: `data/census.py`, `data/anndata_io.py`, `data/dataset.py`,
@@ -371,6 +372,9 @@ A running record of decisions so future sessions don't re-litigate them.
 | 2026-06-18 | ~~**Pin `zarr>=2.12.0,<3`.**~~ Superseded same day (see next row). | `anndata` (0.11.x) did not support zarr-python v3; an unconstrained `zarr>=2.12.0` resolved to 3.x and broke `import anndata`. |
 | 2026-06-18 | **Require `zarr>=3.0.0` + `anndata>=0.12.0`** (reverses the `zarr<3` pin above). | `anndata` 0.12 adds zarr-python v3 support; standardize on zarr v3 rather than holding back on the v2 line. |
 | 2026-06-18 | **Minibatch contract = `Minibatch(counts, size_factors, covariates)`** as a dataclass; per-cell samples are dicts (`counts`, `size_factor`, `organism`, `batch`) stacked by `collate_minibatch`. Covariates always carry `organism` + `batch`. | One contract shared by every source (local now, Census next); v1 ignores covariates but they travel with the batch so conditioning can be added without a format change. |
+| 2026-06-19 | **Census streaming uses `tiledbsoma_ml.ExperimentDataset` + `experiment_dataloader`** wrapped by `CensusMinibatchLoader`, which adapts each streamed `(X, obs)` chunk to the shared `Minibatch` via `census_chunk_to_minibatch`. The chunk→`Minibatch` glue is pure-Python (tested offline with synthetic fixtures); the live TileDB-SOMA wiring is a single `network`-marked test (skipped by default). | Keeps the heavy/networked path thin and the contract glue 100%-covered offline; reuses `GeneVocabulary`/`align_to_reference` so Census and local AnnData share one downstream API. |
+| 2026-06-19 | **Pin `DEFAULT_CENSUS_VERSION = "2025-11-08"`** (newest LTS at implementation time), configurable per call. Default reference gene set = the full Census `var` index for the organism. | Reproducible streaming; supersedes the earlier `2025-01-30` note. A curated/HVG gene panel can be selected later via `var_value_filter` in the model PRs. |
+| 2026-06-19 | **Register a `network` pytest marker, skipped by default** via `addopts = [..., "-m", "not network"]`; run live tests with `pytest -m network -o addopts=""`. | Keeps CI offline-by-default while still shipping an executable end-to-end Census check. |
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
 - **Other omics modalities**: extend the discrete-codebook approach beyond
@@ -389,5 +393,5 @@ A running record of decisions so future sessions don't re-litigate them.
 
 **Last Updated**: 2026-06-17 — clarified multi-organism (human + mouse) support,
 v1-unconditional decision, and added the design-decisions log.
-**Current Focus**: PR #2 — organism-aware data layer (see `docs/STATUS.md`).
-**Next Review**: After PR #2 (data layer).
+**Current Focus**: PR #3 — residual vector-quantizer layer (see `docs/STATUS.md`).
+**Next Review**: After PR #3 (residual VQ layer).
