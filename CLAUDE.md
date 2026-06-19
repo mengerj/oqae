@@ -62,6 +62,24 @@ Individual gates: `make lint`, `make type-check` (mypy strict on `src/omvqvae`),
 - **Dependencies**: add a new dep only in the PR that first uses it, and refresh
   `uv.lock` (`uv lock`) in the same change.
 
+## Code patterns / idioms
+
+The data layer established these structural conventions; keep following them as
+new packages (`layers/`, `models/`, `train/`, …) land.
+
+- **Inject data sources** into loaders/components (pass the iterable or handle
+  in) so tests can substitute a plain list — don't construct the source inside
+  the class. This is why `CensusMinibatchLoader` is testable offline.
+- **Networked/heavy logic = pure core + thin I/O shell.** Keep the real work in
+  pure-Python functions tested offline with synthetic fixtures; mark the live
+  shell `@pytest.mark.network` (skipped by default) and `# pragma: no cover`.
+- **Lazy-import heavy deps** (`torch`, `cellxgene_census`, `anndata`, …) inside
+  the function that uses them; put type-only imports under `if TYPE_CHECKING`.
+  Keeps `import omvqvae` fast and optional deps optional.
+- **`@dataclass` for plain data bundles; a validating class for anything with
+  invariants** (raise in `__init__`). `Minibatch` is a dataclass; `GeneVocabulary`
+  is a hand-written class that rejects empty/duplicate gene ids.
+
 ## Git / PR workflow
 
 - Each automated run works on a fresh branch off the latest `main`
