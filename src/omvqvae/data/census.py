@@ -64,6 +64,15 @@ __all__ = [
 ]
 
 
+def _close_quietly(objs: Sequence[Any]) -> None:
+    """Close each object, logging (not raising) on failure."""
+    for obj in objs:
+        try:
+            obj.close()
+        except Exception:  # best-effort cleanup
+            logger.warning("Failed to close Census handle %r.", obj)
+
+
 def _validate_organism(organism: str) -> None:
     """Raise if ``organism`` is not a v1-supported Census experiment."""
     if organism not in SUPPORTED_ORGANISMS:
@@ -255,11 +264,7 @@ class CensusMinibatchLoader:
 
     def close(self) -> None:
         """Release any open Census / query handles."""
-        for obj in self._closeables:
-            try:
-                obj.close()
-            except Exception:  # pragma: no cover - best-effort cleanup
-                logger.warning("Failed to close Census handle %r.", obj)
+        _close_quietly(self._closeables)
         self._closeables = []
 
     def __enter__(self) -> "CensusMinibatchLoader":
@@ -411,11 +416,7 @@ def build_census_dataloader(
         )
         loader = tiledbsoma_ml.experiment_dataloader(dataset, num_workers=num_workers)
     except Exception:
-        for obj in closeables:
-            try:
-                obj.close()
-            except Exception:  # pragma: no cover - best-effort cleanup
-                pass
+        _close_quietly(closeables)
         raise
 
     return CensusMinibatchLoader(

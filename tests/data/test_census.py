@@ -162,6 +162,20 @@ def test_census_minibatch_loader_maps_batches(human_gene_ids: List[str]) -> None
     assert batches[0].covariates["organism"] == ["homo_sapiens", "homo_sapiens"]
 
 
+class _RaisingCloseable:
+    def close(self) -> None:
+        raise RuntimeError("cannot close")
+
+
+def test_census_minibatch_loader_close_swallows_errors() -> None:
+    vocab = GeneVocabulary("homo_sapiens", ["G1"])
+    loader = CensusMinibatchLoader(
+        _FakeInner([]), ["G1"], vocab, closeables=[_RaisingCloseable()]
+    )
+    # A failing close() is logged, not raised.
+    loader.close()
+
+
 def test_census_minibatch_loader_context_manager_closes() -> None:
     vocab = GeneVocabulary("homo_sapiens", ["G1"])
     handle = _Closeable()
