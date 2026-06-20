@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-19
+**Last updated:** 2026-06-20
 
 ## Current state
 
@@ -34,27 +34,43 @@
     "2025-11-08"` (newest LTS). Offline tests at 100% coverage; a `network`-marked
     live test streams **human and mouse** end-to-end (skipped by default,
     verified passing live this run). `make ci` green.
+- **PR #3 (residual VQ layer) — DONE (this PR).**
+  - `layers/residual_vq.py` — `VectorQuantizer` (single codebook: straight-through
+    estimator, commitment + codebook losses, optional EMA codebook updates with
+    Laplace smoothing, dead-code reset) and `ResidualVQ` (stacks `n_codebooks`
+    quantizers over successive residuals; per-level indices = the cell's discrete
+    code; summed quantized vectors approximate the input).
+  - Per-forward monitoring metrics exposed via `QuantizerOutput` /
+    `ResidualVQOutput` dataclasses: codebook **perplexity** (per-level + mean)
+    and **utilization**, plus split commitment/codebook/total losses — ready for
+    PR #5's W&B logging and PR #9's collapse checks.
+  - Offline synthetic tests (`tests/layers/test_residual_vq.py`): shapes/dtypes,
+    leading-dim preservation, straight-through gradient flow (identity gradient),
+    EMA-buffer vs trained-parameter codebook, EMA update moves the codebook,
+    dead-code reset (active + no-op paths), non-trivial perplexity, residual-norm
+    reduction with more levels, and input-validation errors. 100% coverage on the
+    new module; `make ci` green. No new dependencies (torch already present).
 - Plan/docs reflect the pivot: Census streaming, raw-count NB/ZINB modeling,
   discrete universal latent space, human+mouse, v1 unconditional, W&B monitoring.
 
-## Next task — PR #3: Residual Vector Quantizer layer
+## Next task — PR #4: VQ-VAE core model (raw-count, NB/ZINB)
 
-With the data layer complete, build the discrete bottleneck.
+With the data layer and the discrete bottleneck in place, assemble the model.
 
-1. `layers/residual_vq.py` — a configurable residual VQ module: `n_codebooks`
-   (default 2), codebook size/dim, straight-through estimator for gradient flow,
-   commitment + codebook losses, and EMA / dead-code reset option.
-2. Expose per-forward metrics for monitoring: codebook **perplexity** /
-   utilization and quantization loss, so PR #5's W&B logging and PR #9's
-   collapse checks have them.
-3. Tests (offline, synthetic): shapes/dtypes, gradient flow through the
-   straight-through estimator, that codebooks are utilized (non-trivial
-   perplexity), and that EMA/reset paths run. Keep `make ci` green (strict mypy,
-   coverage).
+1. `models/likelihoods.py` — NB (default) and ZINB reconstruction heads (and a
+   Gaussian-on-log1p alternative), each mapping decoder outputs (+ observed size
+   factor) to a likelihood and a negative-log-likelihood loss over genes.
+2. `models/vqvae.py` — encoder → `ResidualVQ` → decoder. Encoder applies the
+   internal log1p (see `data/normalize.py`); decoder consumes quantized codes +
+   size factor and emits likelihood params. Compose the loss = reconstruction NLL
+   + VQ loss; surface codebook perplexity/utilization for logging.
+3. Tests (offline, synthetic): a 2-epoch smoke train on synthetic counts where
+   the loss decreases; NB and ZINB heads both train; codebooks stay utilized
+   (non-trivial perplexity). Keep `make ci` green (strict mypy, coverage).
 
-**Definition of done:** a residual VQ layer that quantizes encoder outputs to a
-set of codebook indices, returns quantized vectors + indices + losses + metrics,
-back-props through the bottleneck; offline tests; CI green; PR opened.
+**Definition of done:** a VQ-VAE that ingests raw counts, quantizes via
+`ResidualVQ`, reconstructs counts under NB/ZINB, trains on a synthetic smoke
+test; offline tests; CI green; PR opened.
 
 ## Open questions / parked
 
@@ -73,6 +89,15 @@ back-props through the bottleneck; offline tests; CI green; PR opened.
 
 ## Changelog (most recent first)
 
+- **2026-06-20** — PR #3: residual vector-quantizer layer. Added
+  `layers/residual_vq.py` (`VectorQuantizer`, `ResidualVQ`, and the
+  `QuantizerOutput` / `ResidualVQOutput` result bundles): straight-through
+  estimator, commitment + codebook losses, optional EMA codebook updates with
+  Laplace smoothing, dead-code reset, and per-forward perplexity/utilization
+  metrics. `ResidualVQ` stacks `n_codebooks` (default 2) quantizers over
+  successive residuals so each cell becomes a small set of codebook indices.
+  Exported from `layers/__init__.py`. Offline synthetic tests at 100% coverage;
+  no new dependencies; `make ci` green.
 - **2026-06-19** — PR #2 slice 2: CELLxGENE Census streaming. Added
   `data/census.py` (`open_census`, `census_gene_vocabulary`,
   `census_chunk_to_minibatch`, `CensusMinibatchLoader`,
