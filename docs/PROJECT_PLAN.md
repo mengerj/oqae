@@ -375,6 +375,8 @@ A running record of decisions so future sessions don't re-litigate them.
 | 2026-06-19 | **Census streaming uses `tiledbsoma_ml.ExperimentDataset` + `experiment_dataloader`** wrapped by `CensusMinibatchLoader`, which adapts each streamed `(X, obs)` chunk to the shared `Minibatch` via `census_chunk_to_minibatch`. The chunk→`Minibatch` glue is pure-Python (tested offline with synthetic fixtures); the live TileDB-SOMA wiring is a single `network`-marked test (skipped by default). | Keeps the heavy/networked path thin and the contract glue 100%-covered offline; reuses `GeneVocabulary`/`align_to_reference` so Census and local AnnData share one downstream API. |
 | 2026-06-19 | **Pin `DEFAULT_CENSUS_VERSION = "2025-11-08"`** (newest LTS at implementation time), configurable per call. Default reference gene set = the full Census `var` index for the organism. | Reproducible streaming; supersedes the earlier `2025-01-30` note. A curated/HVG gene panel can be selected later via `var_value_filter` in the model PRs. |
 | 2026-06-19 | **Register a `network` pytest marker, skipped by default** via `addopts = [..., "-m", "not network"]`; run live tests with `pytest -m network -o addopts=""`. | Keeps CI offline-by-default while still shipping an executable end-to-end Census check. |
+| 2026-06-21 | **Reconstruction heads use the scVI count parameterization** (`models/likelihoods.py`): a softmax over genes gives mean *proportions* (`px_scale`), scaled by the observed library size (size factor) to the NB mean `px_rate`; dispersion is a learned **gene-wise** `theta`. NB/ZINB/Gaussian share one `ReconstructionHead` interface (`forward`/`reconstruction_loss`/`expected_counts`) via a `build_reconstruction_head` factory. | Keeps depth handling inside the model and count statistics intact; one interface lets the model and W&B PRs swap likelihoods without changing call sites. Gene-wise dispersion matches scVI's default and is enough for v1. |
+| 2026-06-21 | **Split PR #4 into slices; do the likelihood heads first, independently of the residual VQ.** PR #3 (residual VQ) was already implemented in the still-open **PR #24**, so this run built `models/likelihoods.py` (no VQ dependency) rather than duplicating or blocking on it. The VQ-VAE core (`models/vqvae.py`) is slice 2 and depends on PR #24's `ResidualVQ`. | Avoids duplicating in-flight work and a merge conflict with PR #24; keeps each run to one coherent, CI-verifiable chunk. |
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
 - **Other omics modalities**: extend the discrete-codebook approach beyond
@@ -391,7 +393,8 @@ A running record of decisions so future sessions don't re-litigate them.
 
 ---
 
-**Last Updated**: 2026-06-17 — clarified multi-organism (human + mouse) support,
-v1-unconditional decision, and added the design-decisions log.
-**Current Focus**: PR #3 — residual vector-quantizer layer (see `docs/STATUS.md`).
-**Next Review**: After PR #3 (residual VQ layer).
+**Last Updated**: 2026-06-21 — PR #4 slice 1 (reconstruction likelihoods) landed;
+PR #3 (residual VQ) is in flight as the open PR #24.
+**Current Focus**: PR #4 slice 2 — encoder/decoder VQ-VAE core (depends on PR #24's
+`ResidualVQ`; see `docs/STATUS.md`).
+**Next Review**: After PR #4 (VQ-VAE core model).
