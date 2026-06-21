@@ -34,11 +34,13 @@
     "2025-11-08"` (newest LTS). Offline tests at 100% coverage; a `network`-marked
     live test streams **human and mouse** end-to-end (skipped by default,
     verified passing live this run). `make ci` green.
-- **PR #3 (residual VQ layer) — IN FLIGHT (open PR #24, not yet merged).**
-  - `layers/residual_vq.py` implements `VectorQuantizer` + `ResidualVQ`
-    (straight-through estimator, commitment/codebook losses, EMA, dead-code
-    reset, perplexity/utilization metrics) on branch
-    `claude/wonderful-euler-k7rfi7`. Awaiting human review/merge.
+- **PR #3 (residual VQ layer) — DONE and merged to `main` (PR #24).**
+  - `layers/residual_vq.py` — `VectorQuantizer` (single codebook: straight-through
+    estimator, commitment + codebook losses, optional EMA codebook updates with
+    Laplace smoothing, dead-code reset) and `ResidualVQ` (stacks `n_codebooks`
+    quantizers over successive residuals; per-level indices = the cell's discrete
+    code; summed quantized vectors approximate the input). Per-forward
+    perplexity/utilization metrics via `QuantizerOutput` / `ResidualVQOutput`.
 - **PR #4 slice 1 (reconstruction likelihoods) — DONE (this PR).**
   - `models/likelihoods.py`: pure log-prob functions `log_nb_positive`,
     `log_zinb_positive`, `log_gaussian` (SciPy-checked) plus the decoder heads
@@ -46,27 +48,27 @@
     interface (`forward` → params, `reconstruction_loss`, `expected_counts`)
     and a `build_reconstruction_head` factory. scVI-style count parameterization
     (softmax `px_scale` × library size → NB mean; gene-wise dispersion). No new
-    deps. Offline tests at 100% coverage; `make ci` green. Independent of the
-    VQ layer, so it does not touch/conflict with PR #24.
+    deps. Offline tests at 100% coverage; `make ci` green.
 - Plan/docs reflect the pivot: Census streaming, raw-count NB/ZINB modeling,
   discrete universal latent space, human+mouse, v1 unconditional, W&B monitoring.
 
 ## Next task — PR #4 slice 2: encoder/decoder VQ-VAE core
 
-The reconstruction heads (slice 1, this PR) and the residual VQ layer (PR #24)
-are the two halves of the bottleneck + output. Slice 2 wires them into the model.
+The reconstruction heads (slice 1, this PR) and the residual VQ layer (PR #24,
+now in `main`) are the two halves of the bottleneck + output. Slice 2 wires them
+into the model.
 
 1. `models/vqvae.py` — an `nn.Module` encoder (raw counts → internal log1p →
-   hidden), the `ResidualVQ` bottleneck (from PR #24), and a decoder that feeds a
-   `ReconstructionHead` (from this PR). Compose recon + VQ losses; expose codes
-   (per-level indices) and codebook metrics.
+   hidden), the `ResidualVQ` bottleneck (`omvqvae.layers`), and a decoder that
+   feeds a `ReconstructionHead` (`omvqvae.models.likelihoods`). Compose recon + VQ
+   losses; expose codes (per-level indices) and codebook metrics.
 2. Tests (offline, synthetic): a 2-epoch smoke train on synthetic counts for the
    NB and ZINB heads; loss decreases; codebooks utilized (non-trivial
    perplexity); shapes/round-trip. Keep `make ci` green.
 
-**Dependency note:** slice 2 imports `ResidualVQ`, so it should land *after*
-PR #24 merges (or be branched off it). Until then it is blocked on review of
-PR #24 — flag for the human rather than duplicating the VQ layer.
+**Unblocked:** both halves now exist (`ResidualVQ` merged in PR #24; the
+likelihood heads in this PR), so slice 2 can be built directly off `main` once
+this PR merges.
 
 **Definition of done:** an end-to-end VQ-VAE that encodes raw counts to discrete
 codes and reconstructs counts via NB/ZINB; a synthetic smoke-train converges;
@@ -74,11 +76,6 @@ offline tests; CI green; PR opened.
 
 ## Open questions / parked
 
-- **PR ordering vs. PR #24**: PR #3 (residual VQ) is open but unmerged as PR #24.
-  This run did the *independent* PR #4 slice (likelihoods) to avoid conflicting
-  with it. The VQ-VAE core (PR #4 slice 2) depends on PR #24's `ResidualVQ` —
-  merge PR #24 first, or branch slice 2 off it. **Decision for the human:** merge
-  order of PR #24 then the next VQ-VAE PR.
 - **Cross-organism unification** (single shared latent across human+mouse):
   deferred past v1; needs ortholog mapping or shared gene embedding.
 - **NB vs ZINB vs log-normalized+Gaussian** for the quantized setting: support
@@ -102,9 +99,18 @@ offline tests; CI green; PR opened.
   parameterization (softmax proportions × library size → NB mean; gene-wise
   dispersion); Gaussian head for the log-normalized alternative. Exported from
   `models/__init__.py`. No new deps (`torch`/`scipy` already present);
-  `uv.lock` unchanged. Offline tests at 100% coverage; `make ci` green. Chosen as
-  an independent slice because PR #3's residual VQ is already in flight as the
-  unmerged **PR #24** — this slice does not touch the VQ layer.
+  `uv.lock` unchanged. Offline tests at 100% coverage; `make ci` green. Built as
+  an independent slice (no VQ dependency) while PR #3 was in flight; merged `main`
+  in after PR #24 landed.
+- **2026-06-20** — PR #3: residual vector-quantizer layer (PR #24). Added
+  `layers/residual_vq.py` (`VectorQuantizer`, `ResidualVQ`, and the
+  `QuantizerOutput` / `ResidualVQOutput` result bundles): straight-through
+  estimator, commitment + codebook losses, optional EMA codebook updates with
+  Laplace smoothing, dead-code reset, and per-forward perplexity/utilization
+  metrics. `ResidualVQ` stacks `n_codebooks` (default 2) quantizers over
+  successive residuals so each cell becomes a small set of codebook indices.
+  Exported from `layers/__init__.py`. Offline synthetic tests at 100% coverage;
+  no new dependencies; `make ci` green.
 - **2026-06-19** — PR #2 slice 2: CELLxGENE Census streaming. Added
   `data/census.py` (`open_census`, `census_gene_vocabulary`,
   `census_chunk_to_minibatch`, `CensusMinibatchLoader`,
