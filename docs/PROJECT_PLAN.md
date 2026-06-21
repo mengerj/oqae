@@ -380,6 +380,8 @@ A running record of decisions so future sessions don't re-litigate them.
 | 2026-06-19 | **Pin `DEFAULT_CENSUS_VERSION = "2025-11-08"`** (newest LTS at implementation time), configurable per call. Default reference gene set = the full Census `var` index for the organism. | Reproducible streaming; supersedes the earlier `2025-01-30` note. A curated/HVG gene panel can be selected later via `var_value_filter` in the model PRs. |
 | 2026-06-19 | **Register a `network` pytest marker, skipped by default** via `addopts = [..., "-m", "not network"]`; run live tests with `pytest -m network -o addopts=""`. | Keeps CI offline-by-default while still shipping an executable end-to-end Census check. |
 | 2026-06-20 | **Residual VQ = `VectorQuantizer` (one codebook) composed by `ResidualVQ` (stacks N over residuals, default 2).** EMA codebook updates are the default (`ema=True`) with dead-code reset; non-EMA falls back to a gradient-trained codebook + codebook-pull loss. Forward returns a `QuantizerOutput`/`ResidualVQOutput` dataclass bundling quantized vectors, indices, split losses, and perplexity/utilization metrics. | EMA + dead-code reset is the standard collapse-resistant VQ recipe (VQ-VAE-2); the dataclass result keeps the model/training PRs decoupled from the quantizer internals and gives PR #5/#9 their monitoring signals for free. |
+| 2026-06-21 | **Reconstruction heads use the scVI count parameterization** (`models/likelihoods.py`): a softmax over genes gives mean *proportions* (`px_scale`), scaled by the observed library size (size factor) to the NB mean `px_rate`; dispersion is a learned **gene-wise** `theta`. NB/ZINB/Gaussian share one `ReconstructionHead` interface (`forward`/`reconstruction_loss`/`expected_counts`) via a `build_reconstruction_head` factory. | Keeps depth handling inside the model and count statistics intact; one interface lets the model and W&B PRs swap likelihoods without changing call sites. Gene-wise dispersion matches scVI's default and is enough for v1. |
+| 2026-06-21 | **Split PR #4 into slices; do the likelihood heads first, independently of the residual VQ.** PR #3 (residual VQ) was concurrently in flight as PR #24, so this run built `models/likelihoods.py` (no VQ dependency) rather than duplicating or blocking on it; once PR #24 merged, `main` was merged back in. The VQ-VAE core (`models/vqvae.py`) is slice 2 and composes `ResidualVQ` + a `ReconstructionHead`. | Avoids duplicating in-flight work and a docs merge conflict; keeps each run to one coherent, CI-verifiable chunk. |
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
 - **Other omics modalities**: extend the discrete-codebook approach beyond
@@ -396,8 +398,8 @@ A running record of decisions so future sessions don't re-litigate them.
 
 ---
 
-**Last Updated**: 2026-06-20 — PR #3 (residual VQ layer) landed; next focus is
-the VQ-VAE core model.
-**Current Focus**: PR #4 — VQ-VAE core model (raw-count NB/ZINB) (see
-`docs/STATUS.md`).
+**Last Updated**: 2026-06-21 — PR #3 (residual VQ layer, PR #24) merged to `main`;
+PR #4 slice 1 (reconstruction likelihoods) landed.
+**Current Focus**: PR #4 slice 2 — encoder/decoder VQ-VAE core, composing
+`ResidualVQ` + a `ReconstructionHead` (see `docs/STATUS.md`).
 **Next Review**: After PR #4 (VQ-VAE core model).

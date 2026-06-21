@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-20
+**Last updated:** 2026-06-21
 
 ## Current state
 
@@ -34,43 +34,45 @@
     "2025-11-08"` (newest LTS). Offline tests at 100% coverage; a `network`-marked
     live test streams **human and mouse** end-to-end (skipped by default,
     verified passing live this run). `make ci` green.
-- **PR #3 (residual VQ layer) — DONE (this PR).**
+- **PR #3 (residual VQ layer) — DONE and merged to `main` (PR #24).**
   - `layers/residual_vq.py` — `VectorQuantizer` (single codebook: straight-through
     estimator, commitment + codebook losses, optional EMA codebook updates with
     Laplace smoothing, dead-code reset) and `ResidualVQ` (stacks `n_codebooks`
     quantizers over successive residuals; per-level indices = the cell's discrete
-    code; summed quantized vectors approximate the input).
-  - Per-forward monitoring metrics exposed via `QuantizerOutput` /
-    `ResidualVQOutput` dataclasses: codebook **perplexity** (per-level + mean)
-    and **utilization**, plus split commitment/codebook/total losses — ready for
-    PR #5's W&B logging and PR #9's collapse checks.
-  - Offline synthetic tests (`tests/layers/test_residual_vq.py`): shapes/dtypes,
-    leading-dim preservation, straight-through gradient flow (identity gradient),
-    EMA-buffer vs trained-parameter codebook, EMA update moves the codebook,
-    dead-code reset (active + no-op paths), non-trivial perplexity, residual-norm
-    reduction with more levels, and input-validation errors. 100% coverage on the
-    new module; `make ci` green. No new dependencies (torch already present).
+    code; summed quantized vectors approximate the input). Per-forward
+    perplexity/utilization metrics via `QuantizerOutput` / `ResidualVQOutput`.
+- **PR #4 slice 1 (reconstruction likelihoods) — DONE (this PR).**
+  - `models/likelihoods.py`: pure log-prob functions `log_nb_positive`,
+    `log_zinb_positive`, `log_gaussian` (SciPy-checked) plus the decoder heads
+    `NBHead`, `ZINBHead`, `GaussianHead` behind one `ReconstructionHead`
+    interface (`forward` → params, `reconstruction_loss`, `expected_counts`)
+    and a `build_reconstruction_head` factory. scVI-style count parameterization
+    (softmax `px_scale` × library size → NB mean; gene-wise dispersion). No new
+    deps. Offline tests at 100% coverage; `make ci` green.
 - Plan/docs reflect the pivot: Census streaming, raw-count NB/ZINB modeling,
   discrete universal latent space, human+mouse, v1 unconditional, W&B monitoring.
 
-## Next task — PR #4: VQ-VAE core model (raw-count, NB/ZINB)
+## Next task — PR #4 slice 2: encoder/decoder VQ-VAE core
 
-With the data layer and the discrete bottleneck in place, assemble the model.
+The reconstruction heads (slice 1, this PR) and the residual VQ layer (PR #24,
+now in `main`) are the two halves of the bottleneck + output. Slice 2 wires them
+into the model.
 
-1. `models/likelihoods.py` — NB (default) and ZINB reconstruction heads (and a
-   Gaussian-on-log1p alternative), each mapping decoder outputs (+ observed size
-   factor) to a likelihood and a negative-log-likelihood loss over genes.
-2. `models/vqvae.py` — encoder → `ResidualVQ` → decoder. Encoder applies the
-   internal log1p (see `data/normalize.py`); decoder consumes quantized codes +
-   size factor and emits likelihood params. Compose the loss = reconstruction NLL
-   + VQ loss; surface codebook perplexity/utilization for logging.
-3. Tests (offline, synthetic): a 2-epoch smoke train on synthetic counts where
-   the loss decreases; NB and ZINB heads both train; codebooks stay utilized
-   (non-trivial perplexity). Keep `make ci` green (strict mypy, coverage).
+1. `models/vqvae.py` — an `nn.Module` encoder (raw counts → internal log1p →
+   hidden), the `ResidualVQ` bottleneck (`omvqvae.layers`), and a decoder that
+   feeds a `ReconstructionHead` (`omvqvae.models.likelihoods`). Compose recon + VQ
+   losses; expose codes (per-level indices) and codebook metrics.
+2. Tests (offline, synthetic): a 2-epoch smoke train on synthetic counts for the
+   NB and ZINB heads; loss decreases; codebooks utilized (non-trivial
+   perplexity); shapes/round-trip. Keep `make ci` green.
 
-**Definition of done:** a VQ-VAE that ingests raw counts, quantizes via
-`ResidualVQ`, reconstructs counts under NB/ZINB, trains on a synthetic smoke
-test; offline tests; CI green; PR opened.
+**Unblocked:** both halves now exist (`ResidualVQ` merged in PR #24; the
+likelihood heads in this PR), so slice 2 can be built directly off `main` once
+this PR merges.
+
+**Definition of done:** an end-to-end VQ-VAE that encodes raw counts to discrete
+codes and reconstructs counts via NB/ZINB; a synthetic smoke-train converges;
+offline tests; CI green; PR opened.
 
 ## Open questions / parked
 
@@ -89,7 +91,18 @@ test; offline tests; CI green; PR opened.
 
 ## Changelog (most recent first)
 
-- **2026-06-20** — PR #3: residual vector-quantizer layer. Added
+- **2026-06-21** — PR #4 slice 1: reconstruction likelihoods. Added
+  `models/likelihoods.py` — pure log-prob functions (`log_nb_positive`,
+  `log_zinb_positive`, `log_gaussian`, validated against SciPy) and decoder heads
+  (`NBHead`, `ZINBHead`, `GaussianHead`) under a shared `ReconstructionHead`
+  interface plus a `build_reconstruction_head` factory. scVI-style count
+  parameterization (softmax proportions × library size → NB mean; gene-wise
+  dispersion); Gaussian head for the log-normalized alternative. Exported from
+  `models/__init__.py`. No new deps (`torch`/`scipy` already present);
+  `uv.lock` unchanged. Offline tests at 100% coverage; `make ci` green. Built as
+  an independent slice (no VQ dependency) while PR #3 was in flight; merged `main`
+  in after PR #24 landed.
+- **2026-06-20** — PR #3: residual vector-quantizer layer (PR #24). Added
   `layers/residual_vq.py` (`VectorQuantizer`, `ResidualVQ`, and the
   `QuantizerOutput` / `ResidualVQOutput` result bundles): straight-through
   estimator, commitment + codebook losses, optional EMA codebook updates with
