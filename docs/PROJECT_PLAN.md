@@ -257,12 +257,18 @@ src/omvqvae/
 
 ### **Phase 2: Core Model (PRs 4–6)**
 
-#### **PR #4: VQ-VAE Core Model (raw-count, NB/ZINB)**
-- **Scope**: encoder/decoder, count likelihoods, size-factor + covariate
-  conditioning, loss composition (recon + VQ).
+#### **PR #4: VQ-VAE Core Model (raw-count, NB/ZINB) — ✅ DONE**
+- **Scope**: encoder/decoder, count likelihoods, size-factor conditioning, loss
+  composition (recon + VQ).
 - **Files**: `models/vqvae.py`, `models/likelihoods.py`.
-- **Exit criteria**: 2-epoch smoke test on synthetic counts; NB and ZINB heads
-  both train; codebooks are utilized (non-trivial perplexity).
+- **Status**: complete. *Slice 1* (reconstruction likelihoods / decoder heads)
+  merged; *Slice 2* (`OmicsVQVAE` wiring the encoder, `ResidualVQ`, and a
+  `ReconstructionHead` end to end, returning a `VQVAEOutput`) landed in
+  `models/vqvae.py`. v1 is unconditional, so covariates are carried by the data
+  layer but not fed to the model.
+- **Exit criteria** (met): 40-step smoke train on synthetic counts; NB and ZINB
+  heads both train (recon loss decreases); codebooks are utilized (non-trivial
+  perplexity); 100% offline coverage; `make ci` green.
 
 #### **PR #5: Training/Fine-tuning CLI + W&B**
 - **Scope**: OmegaConf config, typer CLI, training loop, W&B tracking, toy
@@ -382,6 +388,7 @@ A running record of decisions so future sessions don't re-litigate them.
 | 2026-06-20 | **Residual VQ = `VectorQuantizer` (one codebook) composed by `ResidualVQ` (stacks N over residuals, default 2).** EMA codebook updates are the default (`ema=True`) with dead-code reset; non-EMA falls back to a gradient-trained codebook + codebook-pull loss. Forward returns a `QuantizerOutput`/`ResidualVQOutput` dataclass bundling quantized vectors, indices, split losses, and perplexity/utilization metrics. | EMA + dead-code reset is the standard collapse-resistant VQ recipe (VQ-VAE-2); the dataclass result keeps the model/training PRs decoupled from the quantizer internals and gives PR #5/#9 their monitoring signals for free. |
 | 2026-06-21 | **Reconstruction heads use the scVI count parameterization** (`models/likelihoods.py`): a softmax over genes gives mean *proportions* (`px_scale`), scaled by the observed library size (size factor) to the NB mean `px_rate`; dispersion is a learned **gene-wise** `theta`. NB/ZINB/Gaussian share one `ReconstructionHead` interface (`forward`/`reconstruction_loss`/`expected_counts`) via a `build_reconstruction_head` factory. | Keeps depth handling inside the model and count statistics intact; one interface lets the model and W&B PRs swap likelihoods without changing call sites. Gene-wise dispersion matches scVI's default and is enough for v1. |
 | 2026-06-21 | **Split PR #4 into slices; do the likelihood heads first, independently of the residual VQ.** PR #3 (residual VQ) was concurrently in flight as PR #24, so this run built `models/likelihoods.py` (no VQ dependency) rather than duplicating or blocking on it; once PR #24 merged, `main` was merged back in. The VQ-VAE core (`models/vqvae.py`) is slice 2 and composes `ResidualVQ` + a `ReconstructionHead`. | Avoids duplicating in-flight work and a docs merge conflict; keeps each run to one coherent, CI-verifiable chunk. |
+| 2026-06-22 | **`OmicsVQVAE` = symmetric MLP encoder/decoder around `ResidualVQ` + a `ReconstructionHead`.** Encoder input is internally `log1p`-transformed for numerical stability; the reconstruction *target* is raw counts for NB/ZINB and `log1p` expression for the Gaussian head. Decoder hidden widths mirror the encoder (`hidden_dims` reversed); the head consumes the final decoder hidden dim. `forward` returns a `VQVAEOutput` composing recon + VQ loss with the per-level codes and codebook metrics. Total loss = `reconstruction_loss + vq.loss` (per-cell-mean recon NLL + mean VQ loss), unweighted in v1. | Keeps depth/normalization handling inside the model and count statistics intact; one symmetric, configurable module covers all three likelihoods. The `VQVAEOutput` bundle hands PR #5 its loss + W&B monitoring signals without coupling to the layer internals. Loss-term weighting is left as a future tuning knob. |
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
 - **Other omics modalities**: extend the discrete-codebook approach beyond
@@ -398,8 +405,8 @@ A running record of decisions so future sessions don't re-litigate them.
 
 ---
 
-**Last Updated**: 2026-06-21 — PR #3 (residual VQ layer, PR #24) merged to `main`;
-PR #4 slice 1 (reconstruction likelihoods) landed.
-**Current Focus**: PR #4 slice 2 — encoder/decoder VQ-VAE core, composing
-`ResidualVQ` + a `ReconstructionHead` (see `docs/STATUS.md`).
-**Next Review**: After PR #4 (VQ-VAE core model).
+**Last Updated**: 2026-06-22 — PR #4 complete: `OmicsVQVAE` (`models/vqvae.py`)
+wires the encoder, `ResidualVQ`, and a `ReconstructionHead` end to end.
+**Current Focus**: PR #5 — training/fine-tuning CLI + W&B tracking (offline-
+friendly tracker + training loop first; see `docs/STATUS.md`).
+**Next Review**: After PR #5 (training CLI + W&B).
