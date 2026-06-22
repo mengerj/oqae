@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-21
+**Last updated:** 2026-06-22
 
 ## Current state
 
@@ -41,7 +41,7 @@
     quantizers over successive residuals; per-level indices = the cell's discrete
     code; summed quantized vectors approximate the input). Per-forward
     perplexity/utilization metrics via `QuantizerOutput` / `ResidualVQOutput`.
-- **PR #4 slice 1 (reconstruction likelihoods) — DONE (this PR).**
+- **PR #4 slice 1 (reconstruction likelihoods) — DONE and merged to `main`.**
   - `models/likelihoods.py`: pure log-prob functions `log_nb_positive`,
     `log_zinb_positive`, `log_gaussian` (SciPy-checked) plus the decoder heads
     `NBHead`, `ZINBHead`, `GaussianHead` behind one `ReconstructionHead`
@@ -49,30 +49,46 @@
     and a `build_reconstruction_head` factory. scVI-style count parameterization
     (softmax `px_scale` × library size → NB mean; gene-wise dispersion). No new
     deps. Offline tests at 100% coverage; `make ci` green.
+- **PR #4 slice 2 (encoder/decoder VQ-VAE core) — DONE (this PR). PR #4 complete.**
+  - `models/vqvae.py`: `OmicsVQVAE` (`nn.Module`) wires the three stages — an
+    MLP encoder (raw counts → internal `log1p` → hidden → `n_latent`), the
+    `ResidualVQ` bottleneck (`omvqvae.layers`), and a mirrored decoder feeding a
+    `ReconstructionHead` (`omvqvae.models.likelihoods`). `forward(counts,
+    size_factors)` returns a `VQVAEOutput` composing recon + VQ loss and exposing
+    the per-level discrete codes, the latent / quantized vectors, and codebook
+    perplexity/utilization. Convenience methods: `encode`, `quantize`,
+    `encode_codes`, `decode`, `expected_counts`. NB/ZINB reconstruct raw counts;
+    the Gaussian head targets `log1p` expression. No new deps. Offline tests at
+    100% coverage incl. a synthetic 40-step smoke-train (NB + ZINB) where the
+    recon loss decreases and codebooks stay utilized; `make ci` green.
 - Plan/docs reflect the pivot: Census streaming, raw-count NB/ZINB modeling,
   discrete universal latent space, human+mouse, v1 unconditional, W&B monitoring.
 
-## Next task — PR #4 slice 2: encoder/decoder VQ-VAE core
+## Next task — PR #5: training/fine-tuning CLI + W&B tracking
 
-The reconstruction heads (slice 1, this PR) and the residual VQ layer (PR #24,
-now in `main`) are the two halves of the bottleneck + output. Slice 2 wires them
-into the model.
+The model core (PR #4) is now complete: data → `OmicsVQVAE` → loss is wired end
+to end. PR #5 turns that into a runnable training entry point.
 
-1. `models/vqvae.py` — an `nn.Module` encoder (raw counts → internal log1p →
-   hidden), the `ResidualVQ` bottleneck (`omvqvae.layers`), and a decoder that
-   feeds a `ReconstructionHead` (`omvqvae.models.likelihoods`). Compose recon + VQ
-   losses; expose codes (per-level indices) and codebook metrics.
-2. Tests (offline, synthetic): a 2-epoch smoke train on synthetic counts for the
-   NB and ZINB heads; loss decreases; codebooks utilized (non-trivial
-   perplexity); shapes/round-trip. Keep `make ci` green.
+1. `utils/tracking.py` — a thin experiment-tracking wrapper around W&B that is
+   **offline-friendly**: a no-op/console logger when W&B is disabled or absent
+   (lazy-import `wandb`), logging losses, reconstruction metrics, and codebook
+   usage/perplexity from `VQVAEOutput`.
+2. `train/loop.py` — a training loop that pulls `Minibatch`es from any data
+   source (local AnnData now; Census), runs `OmicsVQVAE`, steps an optimizer,
+   and logs through the tracker. Keep the heavy/networked I/O thin; test the
+   pure loop on a synthetic in-memory `CountsDataset`.
+3. `train/cli.py` — an OmegaConf + typer CLI to launch training/fine-tuning from
+   a config (organism, data source, model hyper-params, likelihood). Add deps
+   `omegaconf`, `typer`, `rich` (already partly present — verify) and refresh
+   `uv.lock` if needed.
 
-**Unblocked:** both halves now exist (`ResidualVQ` merged in PR #24; the
-likelihood heads in this PR), so slice 2 can be built directly off `main` once
-this PR merges.
+Consider splitting: slice 1 = `tracking.py` + `train/loop.py` (offline-testable,
+no CLI/heavy deps); slice 2 = the typer/OmegaConf CLI. The tracker + loop are the
+coherent first chunk.
 
-**Definition of done:** an end-to-end VQ-VAE that encodes raw counts to discrete
-codes and reconstructs counts via NB/ZINB; a synthetic smoke-train converges;
-offline tests; CI green; PR opened.
+**Definition of done:** a CLI trains a toy model from a local `.h5ad` (and,
+network-gated, from Census) in minutes; runs log to W&B and also work offline;
+offline tests on the pure loop; CI green; PR opened.
 
 ## Open questions / parked
 
@@ -91,6 +107,18 @@ offline tests; CI green; PR opened.
 
 ## Changelog (most recent first)
 
+- **2026-06-22** — PR #4 slice 2: encoder/decoder VQ-VAE core. Added
+  `models/vqvae.py` — `OmicsVQVAE` composing an MLP encoder (raw counts →
+  internal `log1p` → `n_latent`), the `ResidualVQ` bottleneck, and a mirrored
+  decoder feeding a `ReconstructionHead`. `forward(counts, size_factors)`
+  returns a `VQVAEOutput` bundling the composed reconstruction + VQ loss, the
+  per-level discrete codes, latent/quantized vectors, and codebook
+  perplexity/utilization; plus `encode`/`quantize`/`encode_codes`/`decode`/
+  `expected_counts` helpers. NB/ZINB reconstruct raw counts; the Gaussian head
+  targets `log1p` expression. Exported from `models/__init__.py`. No new deps;
+  `uv.lock` unchanged. Offline tests at 100% coverage incl. a synthetic 40-step
+  smoke-train (NB + ZINB) where the reconstruction loss decreases and codebooks
+  stay utilized; `make ci` green. **PR #4 is now complete.**
 - **2026-06-21** — PR #4 slice 1: reconstruction likelihoods. Added
   `models/likelihoods.py` — pure log-prob functions (`log_nb_positive`,
   `log_zinb_positive`, `log_gaussian`, validated against SciPy) and decoder heads

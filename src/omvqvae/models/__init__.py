@@ -1,7 +1,8 @@
 """VQ-VAE model implementations.
 
-Currently exposes the raw-count reconstruction likelihoods and decoder heads
-(NB / ZINB / Gaussian); the encoder/decoder VQ-VAE itself lands with PR #4.
+Exposes the raw-count reconstruction likelihoods and decoder heads
+(NB / ZINB / Gaussian) and the end-to-end encoder/residual-VQ/decoder
+:class:`OmicsVQVAE`.
 """
 
 from omvqvae.models.likelihoods import (
@@ -15,6 +16,7 @@ from omvqvae.models.likelihoods import (
     log_nb_positive,
     log_zinb_positive,
 )
+from omvqvae.models.vqvae import OmicsVQVAE, VQVAEOutput
 
 __all__ = [
     "LIKELIHOODS",
@@ -26,4 +28,6 @@ __all__ = [
     "ZINBHead",
     "GaussianHead",
     "build_reconstruction_head",
+    "OmicsVQVAE",
+    "VQVAEOutput",
 ]
