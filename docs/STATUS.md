@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-22
+**Last updated:** 2026-06-23
 
 ## Current state
 
@@ -61,34 +61,61 @@
     the Gaussian head targets `log1p` expression. No new deps. Offline tests at
     100% coverage incl. a synthetic 40-step smoke-train (NB + ZINB) where the
     recon loss decreases and codebooks stay utilized; `make ci` green.
+- **PR #5 slice 1 (tracker + training loop) — DONE (this run).**
+  - `utils/tracking.py`: an offline-friendly `ExperimentTracker` (ABC) with a
+    `ConsoleTracker` default (logs metrics through the OQAE logger; no `wandb`
+    needed) and a `WandbTracker` thin shell over an injected live run. The lazy
+    `wandb.init` lives in `_init_wandb_run` (`# pragma: no cover` I/O shell);
+    `build_tracker(backend="console"|"none"|"wandb", ...)` dispatches and logs
+    the run config. `vqvae_metrics` flattens a `VQVAEOutput` (losses + codebook
+    perplexity/usage, expanded per level) to `{name: float}`.
+  - `train/loop.py`: `train(model, data_source, *, config, optimizer, tracker)`
+    — a source-agnostic loop that pulls `Minibatch`es from any iterable
+    (local-AnnData `DataLoader` now, Census later), runs `OmicsVQVAE`, steps an
+    (injectable) optimizer, clips grads, honors `max_steps`, and logs through
+    the tracker. `TrainConfig`/`EpochMetrics`/`TrainResult` bundle the knobs and
+    outcome. Exported from `train/__init__.py`.
+  - No new deps (`wandb`/`omegaconf`/`typer`/`rich` already declared). Offline
+    tests at ~99% coverage incl. a synthetic multi-epoch run where the
+    reconstruction loss drops; `make ci` green.
 - Plan/docs reflect the pivot: Census streaming, raw-count NB/ZINB modeling,
   discrete universal latent space, human+mouse, v1 unconditional, W&B monitoring.
 
-## Next task — PR #5: training/fine-tuning CLI + W&B tracking
+## Next task — PR #5 slice 2: training/fine-tuning CLI
 
-The model core (PR #4) is now complete: data → `OmicsVQVAE` → loss is wired end
-to end. PR #5 turns that into a runnable training entry point.
+Slice 1 (tracker + training loop) is **DONE** (this run). Slice 2 wires a
+config-driven entry point on top of the loop:
 
-1. `utils/tracking.py` — a thin experiment-tracking wrapper around W&B that is
-   **offline-friendly**: a no-op/console logger when W&B is disabled or absent
-   (lazy-import `wandb`), logging losses, reconstruction metrics, and codebook
-   usage/perplexity from `VQVAEOutput`.
-2. `train/loop.py` — a training loop that pulls `Minibatch`es from any data
-   source (local AnnData now; Census), runs `OmicsVQVAE`, steps an optimizer,
-   and logs through the tracker. Keep the heavy/networked I/O thin; test the
-   pure loop on a synthetic in-memory `CountsDataset`.
-3. `train/cli.py` — an OmegaConf + typer CLI to launch training/fine-tuning from
-   a config (organism, data source, model hyper-params, likelihood). Add deps
-   `omegaconf`, `typer`, `rich` (already partly present — verify) and refresh
-   `uv.lock` if needed.
-
-Consider splitting: slice 1 = `tracking.py` + `train/loop.py` (offline-testable,
-no CLI/heavy deps); slice 2 = the typer/OmegaConf CLI. The tracker + loop are the
-coherent first chunk.
+1. `train/cli.py` — an OmegaConf + typer CLI to launch training/fine-tuning from
+   a config (organism, data source, model hyper-params, likelihood, tracking
+   backend). All needed deps (`omegaconf`, `typer`, `rich`, `wandb`) are
+   **already in `pyproject.toml`** — verified this run — so no `uv.lock` refresh
+   is expected unless a new dep is introduced.
+2. Build a model from the config (`OmicsVQVAE`), build the data source from the
+   config (local `.h5ad`/`.zarr` via `build_anndata_dataloader` now;
+   Census-gated path optional), build a tracker via
+   `omvqvae.utils.tracking.build_tracker`, and call
+   `omvqvae.train.train(model, loader, config=TrainConfig(...), tracker=...)`.
+3. Ship an example config (e.g. `configs/train_toy.yaml`) and a tiny synthetic
+   `.h5ad` fixture (or generate one in a test) so the CLI is exercised offline.
 
 **Definition of done:** a CLI trains a toy model from a local `.h5ad` (and,
 network-gated, from Census) in minutes; runs log to W&B and also work offline;
-offline tests on the pure loop; CI green; PR opened.
+offline tests on the CLI's config→objects wiring (invoke via typer's
+`CliRunner`); CI green; PR opened.
+
+### Available building blocks (slice 1, this run)
+
+- `omvqvae.utils.tracking`: `ExperimentTracker` (ABC), `ConsoleTracker`
+  (offline default, logs via the OQAE logger), `WandbTracker` (wraps an
+  injected live run), `build_tracker(backend=...)` (lazy `wandb.init` lives in
+  `_init_wandb_run`), and `vqvae_metrics(output, prefix=...)` flattening a
+  `VQVAEOutput` to `{name: float}`.
+- `omvqvae.train`: `train(model, data_source, *, config, optimizer, tracker)`
+  plus `TrainConfig` / `EpochMetrics` / `TrainResult`. Source-agnostic: pass any
+  iterable of `Minibatch` (a `DataLoader` for multi-epoch). `TrainConfig`
+  carries `max_epochs`/`lr`/`weight_decay`/`grad_clip_norm`/`max_steps`/
+  `log_every`/`device`.
 
 ## Open questions / parked
 
@@ -107,6 +134,18 @@ offline tests on the pure loop; CI green; PR opened.
 
 ## Changelog (most recent first)
 
+- **2026-06-23** — PR #5 slice 1: experiment tracker + training loop. Added
+  `utils/tracking.py` (`ExperimentTracker` ABC, `ConsoleTracker`,
+  `WandbTracker`, `build_tracker`, `vqvae_metrics`) — offline by default
+  (console logger); the `wandb` import is lazy and isolated in `_init_wandb_run`,
+  while `WandbTracker` wraps an injected run so its logic is tested offline with
+  a fake. Added `train/loop.py` (`train`, `TrainConfig`, `EpochMetrics`,
+  `TrainResult`) — a source-agnostic loop over any iterable of `Minibatch`,
+  injectable optimizer/tracker, grad clipping, and `max_steps`. Exported from
+  `train/__init__.py`. No new deps; `uv.lock` unchanged. Offline tests at ~99%
+  coverage (synthetic `CountsDataset` + `DataLoader`, recording fake tracker,
+  loss-decrease smoke run); `make ci` green. Slice 2 (typer/OmegaConf CLI) is
+  the next chunk.
 - **2026-06-22** — PR #4 slice 2: encoder/decoder VQ-VAE core. Added
   `models/vqvae.py` — `OmicsVQVAE` composing an MLP encoder (raw counts →
   internal `log1p` → `n_latent`), the `ResidualVQ` bottleneck, and a mirrored
