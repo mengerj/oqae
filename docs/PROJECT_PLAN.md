@@ -277,6 +277,11 @@ src/omvqvae/
   schemas.
 - **Exit criteria**: CLI trains a toy model from Census *and* from a local
   `.h5ad` in minutes; runs log to W&B (and work offline).
+- **Status**: slice 1 **DONE** — `utils/tracking.py` (offline-friendly
+  `ExperimentTracker`/`ConsoleTracker`/`WandbTracker`/`build_tracker` +
+  `vqvae_metrics`) and `train/loop.py` (`train` + `TrainConfig`/`EpochMetrics`/
+  `TrainResult`, source-agnostic over any `Minibatch` iterable). Slice 2 (the
+  typer/OmegaConf CLI in `train/cli.py`) is next.
 
 #### **PR #6: HuggingFace Hub Integration**
 - **Scope**: serialize/deserialize model + codebooks + config; push/pull.
