@@ -1,0 +1,47 @@
+# Toy training configuration for the OQAE CLI.
+#
+# Run with:
+#   oqae-train configs/train_toy.yaml -s data.path=/path/to/cells.h5ad
+#
+# All values below are merged onto the typed defaults in
+# `omvqvae.train.cli.ExperimentConfig`; only override what you need. Point
+# `data.path` at a local `.h5ad` / `.zarr` of raw counts (the reference gene
+# vocabulary is derived from that file's genes).
+
+seed: 0
+
+model:
+  n_latent: 16
+  hidden_dims: [64]
+  likelihood: nb        # nb | zinb | gaussian
+  codebook_size: 64
+  n_codebooks: 2
+  commitment_cost: 0.25
+  ema: true
+  ema_decay: 0.99
+  reset_dead_codes: true
+  dropout: 0.0
+
+data:
+  source: anndata       # anndata | census
+  organism: homo_sapiens
+  path: null            # <-- set this (e.g. via `-s data.path=...`)
+  batch_size: 128
+  shuffle: true
+  size_factor_mode: total
+
+training:
+  max_epochs: 5
+  lr: 1.0e-3
+  weight_decay: 0.0
+  grad_clip_norm: 1.0
+  max_steps: null
+  log_every: 10
+  device: cpu
+  checkpoint_path: null # set to write `{state_dict, gene_ids, config}` after training
+
+tracking:
+  backend: console      # console | none | wandb
+  run_name: oqae-toy
+  project: oqae
+  offline: false

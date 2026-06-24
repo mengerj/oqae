@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-23
+**Last updated:** 2026-06-24
 
 ## Current state
 
@@ -61,7 +61,25 @@
     the Gaussian head targets `log1p` expression. No new deps. Offline tests at
     100% coverage incl. a synthetic 40-step smoke-train (NB + ZINB) where the
     recon loss decreases and codebooks stay utilized; `make ci` green.
-- **PR #5 slice 1 (tracker + training loop) — DONE (this run).**
+- **PR #5 (training/fine-tuning CLI + W&B) — DONE (both slices). PR #5 complete.**
+  - Slice 2 (this run): `train/cli.py` — a config-driven entry point on top of
+    the loop. An OmegaConf **structured config** (`ExperimentConfig` +
+    `ModelConfig`/`DataConfig`/`TrainingConfig`/`TrackingConfig` dataclasses)
+    validates a YAML, rejects unknown keys, and takes `--set a.b=c` overrides.
+    Pure builders map each section to an object (`build_model`,
+    `build_train_config`, `build_tracker_from_config`, `build_data`);
+    `run_experiment` wires them and calls `omvqvae.train.train`. The
+    local-`.h5ad`/`.zarr` source derives its `GeneVocabulary` (and the model's
+    `n_genes`) from the file's own genes; the Census source is the one networked
+    branch (`# pragma: no cover`). Optional checkpoint persists
+    `{state_dict, organism, gene_ids, config}`. A single-command typer app is
+    exposed as the `oqae-train` console script (added to `pyproject.toml`).
+    Shipped `configs/train_toy.yaml`. All CLI deps
+    (`omegaconf`/`typer`/`rich`/`wandb`) were already declared → **no `uv.lock`
+    change**. Offline tests cover config loading, each builder, `run_experiment`
+    wiring against a synthetic `.h5ad`, and the Typer `CliRunner` end-to-end;
+    `make ci` green (~99% coverage).
+- **PR #5 slice 1 (tracker + training loop) — DONE.**
   - `utils/tracking.py`: an offline-friendly `ExperimentTracker` (ABC) with a
     `ConsoleTracker` default (logs metrics through the OQAE logger; no `wandb`
     needed) and a `WandbTracker` thin shell over an injected live run. The lazy
@@ -81,41 +99,40 @@
 - Plan/docs reflect the pivot: Census streaming, raw-count NB/ZINB modeling,
   discrete universal latent space, human+mouse, v1 unconditional, W&B monitoring.
 
-## Next task — PR #5 slice 2: training/fine-tuning CLI
+## Next task — PR #6: HuggingFace Hub integration
 
-Slice 1 (tracker + training loop) is **DONE** (this run). Slice 2 wires a
-config-driven entry point on top of the loop:
+PR #5 is **DONE**. Next is serializing/round-tripping a trained model through the
+HuggingFace Hub:
 
-1. `train/cli.py` — an OmegaConf + typer CLI to launch training/fine-tuning from
-   a config (organism, data source, model hyper-params, likelihood, tracking
-   backend). All needed deps (`omegaconf`, `typer`, `rich`, `wandb`) are
-   **already in `pyproject.toml`** — verified this run — so no `uv.lock` refresh
-   is expected unless a new dep is introduced.
-2. Build a model from the config (`OmicsVQVAE`), build the data source from the
-   config (local `.h5ad`/`.zarr` via `build_anndata_dataloader` now;
-   Census-gated path optional), build a tracker via
-   `omvqvae.utils.tracking.build_tracker`, and call
-   `omvqvae.train.train(model, loader, config=TrainConfig(...), tracker=...)`.
-3. Ship an example config (e.g. `configs/train_toy.yaml`) and a tiny synthetic
-   `.h5ad` fixture (or generate one in a test) so the CLI is exercised offline.
+1. `models/hf_utils.py` (or `inference/hf_utils.py`) — save a trained
+   `OmicsVQVAE` (state dict + codebooks) **plus** the config and the gene
+   vocabulary (`organism`, `gene_ids`) to a local directory, and load it back to
+   a fully-reconstructed model on the right feature space. The CLI checkpoint
+   already persists `{state_dict, organism, gene_ids, config}` — reuse that
+   bundle shape so a CLI-trained checkpoint and an HF-pushed model share one
+   format.
+2. `push_to_hub` / `from_pretrained`-style helpers wrapping `huggingface_hub`
+   (new dep — add it **only in this PR** and refresh `uv.lock`). Keep the network
+   I/O in a thin shell (`# pragma: no cover`, `@pytest.mark.network`); test the
+   pure save/load round-trip offline against a temp dir.
 
-**Definition of done:** a CLI trains a toy model from a local `.h5ad` (and,
-network-gated, from Census) in minutes; runs log to W&B and also work offline;
-offline tests on the CLI's config→objects wiring (invoke via typer's
-`CliRunner`); CI green; PR opened.
+**Definition of done:** a trained model round-trips state+codebooks+config+vocab
+through a local dir (offline test) and, network-gated, through a HF test repo;
+loading rebuilds the exact model/feature space; CI green; PR opened.
 
-### Available building blocks (slice 1, this run)
+### Available building blocks
 
-- `omvqvae.utils.tracking`: `ExperimentTracker` (ABC), `ConsoleTracker`
-  (offline default, logs via the OQAE logger), `WandbTracker` (wraps an
-  injected live run), `build_tracker(backend=...)` (lazy `wandb.init` lives in
-  `_init_wandb_run`), and `vqvae_metrics(output, prefix=...)` flattening a
-  `VQVAEOutput` to `{name: float}`.
-- `omvqvae.train`: `train(model, data_source, *, config, optimizer, tracker)`
-  plus `TrainConfig` / `EpochMetrics` / `TrainResult`. Source-agnostic: pass any
-  iterable of `Minibatch` (a `DataLoader` for multi-epoch). `TrainConfig`
-  carries `max_epochs`/`lr`/`weight_decay`/`grad_clip_norm`/`max_steps`/
-  `log_every`/`device`.
+- `omvqvae.train`: `run_experiment(config)` / `load_config(path, overrides=...)`
+  / `build_model` / `build_data` / `build_train_config` /
+  `build_tracker_from_config`, plus the `ExperimentConfig` dataclass schema and
+  the `oqae-train` console script. The CLI's optional checkpoint
+  (`training.checkpoint_path`) already writes
+  `torch.save({state_dict, organism, gene_ids, config})` — the natural seed for
+  the HF serialization format.
+- `omvqvae.utils.tracking`: `ExperimentTracker`/`ConsoleTracker`/`WandbTracker`/
+  `build_tracker` + `vqvae_metrics`.
+- `omvqvae.train.loop`: `train(model, data_source, *, config, optimizer,
+  tracker)` + `TrainConfig`/`EpochMetrics`/`TrainResult`.
 
 ## Open questions / parked
 
@@ -134,6 +151,20 @@ offline tests on the CLI's config→objects wiring (invoke via typer's
 
 ## Changelog (most recent first)
 
+- **2026-06-24** — PR #5 slice 2: config-driven training CLI. Added
+  `train/cli.py` — an OmegaConf structured-config schema (`ExperimentConfig` +
+  `ModelConfig`/`DataConfig`/`TrainingConfig`/`TrackingConfig`) and a
+  single-command typer app exposed as the `oqae-train` console script. Pure
+  builders (`build_model`, `build_train_config`, `build_tracker_from_config`,
+  `build_data`) map config sections to objects; `run_experiment` wires them and
+  calls `omvqvae.train.train`. Local-AnnData source derives its `GeneVocabulary`
+  from the file's genes; the Census source is the one gated/`# pragma: no cover`
+  branch. Optional checkpoint persists `{state_dict, organism, gene_ids,
+  config}`. Shipped `configs/train_toy.yaml`; registered `[project.scripts]
+  oqae-train`. All CLI deps were already declared → **`uv.lock` unchanged**.
+  Offline tests cover config loading/validation, every builder, `run_experiment`
+  against a synthetic `.h5ad`, and the Typer `CliRunner` end-to-end; `make ci`
+  green (~99% coverage). **PR #5 is now complete.**
 - **2026-06-23** — PR #5 slice 1: experiment tracker + training loop. Added
   `utils/tracking.py` (`ExperimentTracker` ABC, `ConsoleTracker`,
   `WandbTracker`, `build_tracker`, `vqvae_metrics`) — offline by default

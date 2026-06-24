@@ -53,6 +53,9 @@ dev = [
     "coverage>=7.3.0",
 ]
 
+[project.scripts]
+oqae-train = "omvqvae.train.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/mengerj/oqae"
 Repository = "https://github.com/mengerj/oqae.git"

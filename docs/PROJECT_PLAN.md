@@ -277,11 +277,19 @@ src/omvqvae/
   schemas.
 - **Exit criteria**: CLI trains a toy model from Census *and* from a local
   `.h5ad` in minutes; runs log to W&B (and work offline).
-- **Status**: slice 1 **DONE** — `utils/tracking.py` (offline-friendly
+- **Status**: **DONE**. Slice 1 — `utils/tracking.py` (offline-friendly
   `ExperimentTracker`/`ConsoleTracker`/`WandbTracker`/`build_tracker` +
   `vqvae_metrics`) and `train/loop.py` (`train` + `TrainConfig`/`EpochMetrics`/
-  `TrainResult`, source-agnostic over any `Minibatch` iterable). Slice 2 (the
-  typer/OmegaConf CLI in `train/cli.py`) is next.
+  `TrainResult`, source-agnostic over any `Minibatch` iterable). Slice 2 —
+  `train/cli.py`: an OmegaConf-validated config schema (`ExperimentConfig` and
+  per-section dataclasses) + a typer `oqae-train` entry point. Pure builders map
+  each config section to an object (`build_model`, `build_train_config`,
+  `build_tracker_from_config`, `build_data`); `run_experiment` wires them and
+  calls `train`. Local-AnnData source derives its `GeneVocabulary` from the
+  file's genes; the Census source is gated/`# pragma: no cover`. Optional
+  checkpoint persists `{state_dict, organism, gene_ids, config}`. Ships
+  `configs/train_toy.yaml`; offline tests cover loading/builders/wiring and the
+  Typer `CliRunner` end-to-end.
 
 #### **PR #6: HuggingFace Hub Integration**
 - **Scope**: serialize/deserialize model + codebooks + config; push/pull.
@@ -394,6 +402,7 @@ A running record of decisions so future sessions don't re-litigate them.
 | 2026-06-21 | **Reconstruction heads use the scVI count parameterization** (`models/likelihoods.py`): a softmax over genes gives mean *proportions* (`px_scale`), scaled by the observed library size (size factor) to the NB mean `px_rate`; dispersion is a learned **gene-wise** `theta`. NB/ZINB/Gaussian share one `ReconstructionHead` interface (`forward`/`reconstruction_loss`/`expected_counts`) via a `build_reconstruction_head` factory. | Keeps depth handling inside the model and count statistics intact; one interface lets the model and W&B PRs swap likelihoods without changing call sites. Gene-wise dispersion matches scVI's default and is enough for v1. |
 | 2026-06-21 | **Split PR #4 into slices; do the likelihood heads first, independently of the residual VQ.** PR #3 (residual VQ) was concurrently in flight as PR #24, so this run built `models/likelihoods.py` (no VQ dependency) rather than duplicating or blocking on it; once PR #24 merged, `main` was merged back in. The VQ-VAE core (`models/vqvae.py`) is slice 2 and composes `ResidualVQ` + a `ReconstructionHead`. | Avoids duplicating in-flight work and a docs merge conflict; keeps each run to one coherent, CI-verifiable chunk. |
 | 2026-06-22 | **`OmicsVQVAE` = symmetric MLP encoder/decoder around `ResidualVQ` + a `ReconstructionHead`.** Encoder input is internally `log1p`-transformed for numerical stability; the reconstruction *target* is raw counts for NB/ZINB and `log1p` expression for the Gaussian head. Decoder hidden widths mirror the encoder (`hidden_dims` reversed); the head consumes the final decoder hidden dim. `forward` returns a `VQVAEOutput` composing recon + VQ loss with the per-level codes and codebook metrics. Total loss = `reconstruction_loss + vq.loss` (per-cell-mean recon NLL + mean VQ loss), unweighted in v1. | Keeps depth/normalization handling inside the model and count statistics intact; one symmetric, configurable module covers all three likelihoods. The `VQVAEOutput` bundle hands PR #5 its loss + W&B monitoring signals without coupling to the layer internals. Loss-term weighting is left as a future tuning knob. |
+| 2026-06-24 | **Training CLI = OmegaConf structured config + a single-command typer app (`oqae-train`).** The config schema is plain dataclasses (`ExperimentConfig`/`ModelConfig`/`DataConfig`/`TrainingConfig`/`TrackingConfig`) so OmegaConf validates the YAML, rejects unknown keys, and supports `--set a.b=c` dot-list overrides; `OmegaConf.to_object` yields typed objects for mypy. Pure builders (`build_model`/`build_train_config`/`build_tracker_from_config`/`build_data`) map one config section → one object and `run_experiment` wires them, so the config→objects path is unit-tested offline. The **local-AnnData** source derives its `GeneVocabulary` (hence the model's `n_genes`) from the file's own genes; the **Census** source is the one networked branch (`# pragma: no cover`). The optional checkpoint stores `{state_dict, organism, gene_ids, config}`. | A declarative, schema-checked config keeps runs reproducible and overridable from the shell; the pure-builder split keeps the heavy/networked I/O at the edges and everything else offline-testable (incl. via Typer's `CliRunner`). Persisting `gene_ids`/`organism`/`config` alongside the weights is what PR #6 (HF Hub) and PR #7 (inference) need to reload a model against the right feature space. Single-command typer means `oqae-train config.yaml` with no redundant subcommand name. |
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
 - **Other omics modalities**: extend the discrete-codebook approach beyond
