@@ -217,7 +217,9 @@ def load_pretrained(
             f"Saved model feature size ({model.n_genes}) does not match the "
             f"saved gene vocabulary size ({vocabulary.n_genes})."
         )
-    state_dict = torch.load(weights_path, map_location=map_location)
+    # weights_only=True restricts unpickling to tensors/plain containers, so a
+    # malicious checkpoint cannot execute arbitrary code on load (CWE-502).
+    state_dict = torch.load(weights_path, map_location=map_location, weights_only=True)
     model.load_state_dict(state_dict)
     model.eval()
 
@@ -267,7 +269,10 @@ def from_checkpoint(
     from omvqvae.data.dataset import GeneVocabulary
     from omvqvae.models.vqvae import OmicsVQVAE
 
-    bundle = torch.load(checkpoint_path, map_location=map_location)
+    # weights_only=True is safe here: the CLI bundle holds only a tensor state
+    # dict plus plain str/list/dict metadata (no custom classes) — and it blocks
+    # arbitrary-code execution from an untrusted checkpoint (CWE-502).
+    bundle = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
     for key in ("state_dict", "organism", "gene_ids", "config"):
         if key not in bundle:
             raise KeyError(f"Checkpoint is missing the required {key!r} field.")
