@@ -29,6 +29,8 @@ dependencies = [
     "pandas>=1.5.0",
     "scipy>=1.9.0",
     "transformers>=4.20.0",
+    # HuggingFace Hub model sharing — hf_utils.py
+    "huggingface-hub>=0.20.0",
     "omegaconf>=2.3.0",
     "rich>=13.0.0",
     "typer>=0.9.0",

@@ -87,6 +87,47 @@ def test_loss_composition_and_scalars() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Config round-trip (self-describing model)
+# --------------------------------------------------------------------------- #
+def test_get_config_round_trips_through_from_config() -> None:
+    model = OmicsVQVAE(
+        14,
+        n_latent=6,
+        hidden_dims=(32, 16),
+        likelihood="zinb",
+        codebook_size=32,
+        n_codebooks=3,
+        commitment_cost=0.3,
+        ema=False,
+        ema_decay=0.95,
+        reset_dead_codes=False,
+        dropout=0.1,
+    )
+    config = model.get_config()
+    assert config["n_genes"] == 14
+    assert config["hidden_dims"] == [32, 16]
+    assert config["n_codebooks"] == 3
+
+    rebuilt = OmicsVQVAE.from_config(config)
+    assert rebuilt.get_config() == config
+
+
+def test_from_config_ignores_unknown_keys() -> None:
+    config = OmicsVQVAE(10, n_latent=4).get_config()
+    config["future_field"] = "ignored"
+    rebuilt = OmicsVQVAE.from_config(config)
+    assert rebuilt.n_genes == 10
+    assert rebuilt.n_latent == 4
+
+
+def test_from_config_requires_n_genes() -> None:
+    config = OmicsVQVAE(10, n_latent=4).get_config()
+    del config["n_genes"]
+    with pytest.raises(KeyError):
+        OmicsVQVAE.from_config(config)
+
+
+# --------------------------------------------------------------------------- #
 # Codes / round-trip
 # --------------------------------------------------------------------------- #
 def test_encode_codes_matches_forward_indices() -> None:

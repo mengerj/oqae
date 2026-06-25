@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-24
+**Last updated:** 2026-06-25
 
 ## Current state
 
@@ -99,40 +99,60 @@
 - Plan/docs reflect the pivot: Census streaming, raw-count NB/ZINB modeling,
   discrete universal latent space, human+mouse, v1 unconditional, W&B monitoring.
 
-## Next task — PR #6: HuggingFace Hub integration
+- **PR #6 (HuggingFace Hub integration) — DONE (this PR). PR #6 complete.**
+  - `hf_utils.py` (top-level, matching the PROJECT_PLAN package diagram) —
+    `save_pretrained(model, vocabulary, dir, *, experiment_config=None)` and
+    `load_pretrained(dir)` round-trip a trained `OmicsVQVAE` (state dict +
+    codebooks), its architecture hyper-parameters, and the gene vocabulary
+    (`organism`, ordered `gene_ids`) through a HuggingFace-style directory
+    (`config.json` + `pytorch_model.bin`). Loading rebuilds the exact
+    model/feature space (validated) and returns a `LoadedModel`
+    (`model`/`vocabulary`/`experiment_config`).
+  - The model is now **self-describing**: `OmicsVQVAE.get_config()` /
+    `OmicsVQVAE.from_config()` capture/restore every constructor hyper-parameter
+    (`get_config` is the `model` block of `config.json`). `from_config` ignores
+    unknown keys (forward-compatible) and requires `n_genes`.
+  - `from_checkpoint(ckpt, dir)` bridges a CLI checkpoint
+    (`{state_dict, organism, gene_ids, config}`) into the same directory format,
+    so a CLI-trained checkpoint and an HF-pushed model share one on-disk shape.
+  - `push_to_hub` / `from_pretrained` are thin `huggingface_hub` shells
+    (`# pragma: no cover`): they reuse the tested pure save/load step and only
+    add the networked upload/download. Added direct dep `huggingface-hub>=0.20.0`
+    (already present transitively via `transformers`); `uv.lock` refreshed.
+  - Offline tests at 100% coverage on `hf_utils.py` (save/load round-trip incl.
+    a trained model preserving codebooks, `experiment_config` round-trip,
+    eval-mode, every validation/error path, and the `from_checkpoint` bridge)
+    plus `get_config`/`from_config` tests on the model; `make ci` green (~99.7%).
 
-PR #5 is **DONE**. Next is serializing/round-tripping a trained model through the
-HuggingFace Hub:
+## Next task — PR #7: Discrete-code inference API
 
-1. `models/hf_utils.py` (or `inference/hf_utils.py`) — save a trained
-   `OmicsVQVAE` (state dict + codebooks) **plus** the config and the gene
-   vocabulary (`organism`, `gene_ids`) to a local directory, and load it back to
-   a fully-reconstructed model on the right feature space. The CLI checkpoint
-   already persists `{state_dict, organism, gene_ids, config}` — reuse that
-   bundle shape so a CLI-trained checkpoint and an HF-pushed model share one
-   format.
-2. `push_to_hub` / `from_pretrained`-style helpers wrapping `huggingface_hub`
-   (new dep — add it **only in this PR** and refresh `uv.lock`). Keep the network
-   I/O in a thin shell (`# pragma: no cover`, `@pytest.mark.network`); test the
-   pure save/load round-trip offline against a temp dir.
+PR #6 is **DONE**. Next is the user-facing latent API on top of the trained
+model + HF loading:
 
-**Definition of done:** a trained model round-trips state+codebooks+config+vocab
-through a local dir (offline test) and, network-gated, through a HF test repo;
-loading rebuilds the exact model/feature space; CI green; PR opened.
+1. `inference/codes.py` — `encode(adata) → discrete codes` and
+   `decode(codes) → expression` for the universal-latent use cases (compression,
+   generation, plugging codes back into the decoder). Operate on local AnnData
+   (align to the model's `GeneVocabulary` via `align_to_reference`) and/or raw
+   count tensors; return codes as `(n_cells, n_codebooks)` indices and an
+   inverse path that maps codes → quantized vectors → `expected_counts`.
+2. Reuse the loaded model from `omvqvae.hf_utils.load_pretrained` /
+   `from_pretrained` so inference runs on the right feature space. Document the
+   code-vector format. Keep it offline-testable on synthetic data.
+
+**Definition of done:** round-trip encode→decode on held-out synthetic cells;
+documented code-vector format; CI green; PR opened.
 
 ### Available building blocks
 
-- `omvqvae.train`: `run_experiment(config)` / `load_config(path, overrides=...)`
-  / `build_model` / `build_data` / `build_train_config` /
-  `build_tracker_from_config`, plus the `ExperimentConfig` dataclass schema and
-  the `oqae-train` console script. The CLI's optional checkpoint
-  (`training.checkpoint_path`) already writes
-  `torch.save({state_dict, organism, gene_ids, config})` — the natural seed for
-  the HF serialization format.
-- `omvqvae.utils.tracking`: `ExperimentTracker`/`ConsoleTracker`/`WandbTracker`/
-  `build_tracker` + `vqvae_metrics`.
-- `omvqvae.train.loop`: `train(model, data_source, *, config, optimizer,
-  tracker)` + `TrainConfig`/`EpochMetrics`/`TrainResult`.
+- `omvqvae.hf_utils`: `save_pretrained` / `load_pretrained` / `from_checkpoint` /
+  `push_to_hub` / `from_pretrained`, returning a `LoadedModel`
+  (`model`/`vocabulary`/`experiment_config`). The model is self-describing via
+  `OmicsVQVAE.get_config()` / `OmicsVQVAE.from_config()`.
+- `omvqvae.models.vqvae.OmicsVQVAE`: `encode` / `quantize` / `encode_codes` /
+  `decode` / `expected_counts` already expose the code↔expression mapping the
+  inference API wraps.
+- `omvqvae.data`: `GeneVocabulary` / `align_to_reference` / `Minibatch` /
+  `load_anndata` / `extract_counts` for aligning input to the model's genes.
 
 ## Open questions / parked
 
@@ -151,6 +171,21 @@ loading rebuilds the exact model/feature space; CI green; PR opened.
 
 ## Changelog (most recent first)
 
+- **2026-06-25** — PR #6: HuggingFace Hub integration. Added top-level
+  `hf_utils.py` — `save_pretrained` / `load_pretrained` round-trip a trained
+  `OmicsVQVAE` (state dict + codebooks), its architecture config, and the gene
+  vocabulary (`organism`, `gene_ids`) through a HuggingFace-style directory
+  (`config.json` + `pytorch_model.bin`); `load_pretrained` rebuilds the exact
+  model/feature space and returns a `LoadedModel`. Made the model
+  **self-describing** (`OmicsVQVAE.get_config()` / `from_config()`) so
+  serialization is decoupled from the training CLI. `from_checkpoint` bridges a
+  CLI checkpoint bundle into the same directory format; `push_to_hub` /
+  `from_pretrained` are thin `huggingface_hub` shells (`# pragma: no cover`)
+  reusing the tested pure save/load step. Added direct dep
+  `huggingface-hub>=0.20.0` (already transitive via `transformers`); `uv.lock`
+  refreshed. Offline tests at 100% coverage on `hf_utils.py` plus
+  `get_config`/`from_config` model tests; `make ci` green (~99.7%). **PR #6 is
+  now complete.**
 - **2026-06-24** — PR #5 slice 2: config-driven training CLI. Added
   `train/cli.py` — an OmegaConf structured-config schema (`ExperimentConfig` +
   `ModelConfig`/`DataConfig`/`TrainingConfig`/`TrackingConfig`) and a
