@@ -29,7 +29,7 @@ uniformly.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import torch
 from torch import Tensor, nn
@@ -196,6 +196,15 @@ class OmicsVQVAE(nn.Module):
         self.n_latent = n_latent
         self.hidden_dims = tuple(hidden_dims)
         self.likelihood = likelihood.lower()
+        # Remaining constructor hyper-parameters are stored verbatim so the model
+        # is self-describing (see ``get_config`` / ``from_config``), which is what
+        # the HuggingFace-Hub serialization round-trips.
+        self.codebook_size = codebook_size
+        self.commitment_cost = commitment_cost
+        self.ema = ema
+        self.ema_decay = ema_decay
+        self.reset_dead_codes = reset_dead_codes
+        self.dropout = dropout
 
         # Encoder: counts (log1p) -> hidden MLP -> latent.
         enc_body, enc_out = _build_mlp(n_genes, self.hidden_dims, dropout)
@@ -222,10 +231,79 @@ class OmicsVQVAE(nn.Module):
             self.likelihood, dec_out, n_genes
         )
 
+    #: Constructor keyword arguments restored by :meth:`from_config`.
+    _CONFIG_KEYS: Tuple[str, ...] = (
+        "n_latent",
+        "hidden_dims",
+        "likelihood",
+        "codebook_size",
+        "n_codebooks",
+        "commitment_cost",
+        "ema",
+        "ema_decay",
+        "reset_dead_codes",
+        "dropout",
+    )
+
     @property
     def n_codebooks(self) -> int:
         """Number of residual quantization levels."""
         return self.rvq.n_codebooks
+
+    def get_config(self) -> Dict[str, Any]:
+        """
+        Return the hyper-parameters needed to rebuild this model.
+
+        The mapping is JSON-serializable and is the inverse of
+        :meth:`from_config`: ``OmicsVQVAE.from_config(model.get_config())``
+        reconstructs an architecturally-identical (untrained) model.
+
+        Returns
+        -------
+        Dict[str, Any]
+            ``n_genes`` plus every constructor keyword argument.
+        """
+        return {
+            "n_genes": self.n_genes,
+            "n_latent": self.n_latent,
+            "hidden_dims": list(self.hidden_dims),
+            "likelihood": self.likelihood,
+            "codebook_size": self.codebook_size,
+            "n_codebooks": self.n_codebooks,
+            "commitment_cost": self.commitment_cost,
+            "ema": self.ema,
+            "ema_decay": self.ema_decay,
+            "reset_dead_codes": self.reset_dead_codes,
+            "dropout": self.dropout,
+        }
+
+    @classmethod
+    def from_config(cls, config: Mapping[str, Any]) -> "OmicsVQVAE":
+        """
+        Construct an :class:`OmicsVQVAE` from a :meth:`get_config` mapping.
+
+        Unknown keys are ignored so the format can grow without breaking older
+        checkpoints; ``n_genes`` is required.
+
+        Parameters
+        ----------
+        config : Mapping[str, Any]
+            A hyper-parameter mapping as produced by :meth:`get_config`.
+
+        Returns
+        -------
+        OmicsVQVAE
+            A freshly-constructed (untrained) model.
+
+        Raises
+        ------
+        KeyError
+            If ``n_genes`` is absent from ``config``.
+        """
+        if "n_genes" not in config:
+            raise KeyError("Model config is missing the required 'n_genes' key.")
+        kwargs = {key: config[key] for key in cls._CONFIG_KEYS if key in config}
+        return cls(int(config["n_genes"]), **kwargs)
 
     def _encoder_input(self, counts: Tensor) -> Tensor:
         """Internal ``log1p`` transform applied to the encoder input."""

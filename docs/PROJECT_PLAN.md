@@ -291,10 +291,21 @@ src/omvqvae/
   `configs/train_toy.yaml`; offline tests cover loading/builders/wiring and the
   Typer `CliRunner` end-to-end.
 
-#### **PR #6: HuggingFace Hub Integration**
+#### **PR #6: HuggingFace Hub Integration — ✅ DONE**
 - **Scope**: serialize/deserialize model + codebooks + config; push/pull.
 - **Files**: `hf_utils.py`.
-- **Exit criteria**: a trained model round-trips through a HF test repo.
+- **Status**: complete. `save_pretrained` / `load_pretrained` round-trip a
+  trained `OmicsVQVAE` (state dict + codebooks), its architecture config, and
+  the gene vocabulary through a HuggingFace-style directory (`config.json` +
+  `pytorch_model.bin`); the model is self-describing via
+  `OmicsVQVAE.get_config()` / `from_config()`. `from_checkpoint` bridges a CLI
+  checkpoint bundle; `push_to_hub` / `from_pretrained` are thin `huggingface_hub`
+  shells (`# pragma: no cover`, network-gated) over the tested pure step. Added
+  direct dep `huggingface-hub` and refreshed `uv.lock`.
+- **Exit criteria** (met): offline round-trip of state+codebooks+config+vocab
+  through a local dir rebuilds the exact model/feature space; 100% offline
+  coverage on `hf_utils.py`; `make ci` green. The live HF-repo round-trip is the
+  network-gated shell.
 
 ### **Phase 3: Latent API, Examples & Release (PRs 7–10)**
 
@@ -402,6 +413,7 @@ A running record of decisions so future sessions don't re-litigate them.
 | 2026-06-21 | **Reconstruction heads use the scVI count parameterization** (`models/likelihoods.py`): a softmax over genes gives mean *proportions* (`px_scale`), scaled by the observed library size (size factor) to the NB mean `px_rate`; dispersion is a learned **gene-wise** `theta`. NB/ZINB/Gaussian share one `ReconstructionHead` interface (`forward`/`reconstruction_loss`/`expected_counts`) via a `build_reconstruction_head` factory. | Keeps depth handling inside the model and count statistics intact; one interface lets the model and W&B PRs swap likelihoods without changing call sites. Gene-wise dispersion matches scVI's default and is enough for v1. |
 | 2026-06-21 | **Split PR #4 into slices; do the likelihood heads first, independently of the residual VQ.** PR #3 (residual VQ) was concurrently in flight as PR #24, so this run built `models/likelihoods.py` (no VQ dependency) rather than duplicating or blocking on it; once PR #24 merged, `main` was merged back in. The VQ-VAE core (`models/vqvae.py`) is slice 2 and composes `ResidualVQ` + a `ReconstructionHead`. | Avoids duplicating in-flight work and a docs merge conflict; keeps each run to one coherent, CI-verifiable chunk. |
 | 2026-06-22 | **`OmicsVQVAE` = symmetric MLP encoder/decoder around `ResidualVQ` + a `ReconstructionHead`.** Encoder input is internally `log1p`-transformed for numerical stability; the reconstruction *target* is raw counts for NB/ZINB and `log1p` expression for the Gaussian head. Decoder hidden widths mirror the encoder (`hidden_dims` reversed); the head consumes the final decoder hidden dim. `forward` returns a `VQVAEOutput` composing recon + VQ loss with the per-level codes and codebook metrics. Total loss = `reconstruction_loss + vq.loss` (per-cell-mean recon NLL + mean VQ loss), unweighted in v1. | Keeps depth/normalization handling inside the model and count statistics intact; one symmetric, configurable module covers all three likelihoods. The `VQVAEOutput` bundle hands PR #5 its loss + W&B monitoring signals without coupling to the layer internals. Loss-term weighting is left as a future tuning knob. |
+| 2026-06-25 | **HF serialization = self-describing model + a HuggingFace-style directory.** Added `OmicsVQVAE.get_config()` / `from_config()` (the model carries every constructor hyper-parameter), so `hf_utils.save_pretrained` writes `config.json` (`{format_version, organism, gene_ids, model=get_config(), experiment_config}`) + `pytorch_model.bin` and `load_pretrained` rebuilds the exact model/feature space — decoupled from the training CLI. `hf_utils.py` lives at the **package top level** (per the package-structure diagram, not under `models/` or `inference/`). `from_checkpoint` converts a CLI `{state_dict, organism, gene_ids, config}` bundle into the same directory shape so both share one format; `push_to_hub` / `from_pretrained` are thin `huggingface_hub` shells (`# pragma: no cover`, network-gated) wrapping the tested pure save/load step. Added direct dep `huggingface-hub>=0.20.0` (already transitive via `transformers`). | Making the model self-describing is the standard HF `PreTrainedModel` pattern and keeps serialization independent of `train.cli`/OmegaConf. A plain JSON+weights directory *is* a Hub-ready repo and is fully offline-testable, leaving only upload/download as the networked edge. Reusing the CLI bundle's architecture fields via `from_checkpoint` avoids two divergent on-disk formats. |
 | 2026-06-24 | **Training CLI = OmegaConf structured config + a single-command typer app (`oqae-train`).** The config schema is plain dataclasses (`ExperimentConfig`/`ModelConfig`/`DataConfig`/`TrainingConfig`/`TrackingConfig`) so OmegaConf validates the YAML, rejects unknown keys, and supports `--set a.b=c` dot-list overrides; `OmegaConf.to_object` yields typed objects for mypy. Pure builders (`build_model`/`build_train_config`/`build_tracker_from_config`/`build_data`) map one config section → one object and `run_experiment` wires them, so the config→objects path is unit-tested offline. The **local-AnnData** source derives its `GeneVocabulary` (hence the model's `n_genes`) from the file's own genes; the **Census** source is the one networked branch (`# pragma: no cover`). The optional checkpoint stores `{state_dict, organism, gene_ids, config}`. | A declarative, schema-checked config keeps runs reproducible and overridable from the shell; the pure-builder split keeps the heavy/networked I/O at the edges and everything else offline-testable (incl. via Typer's `CliRunner`). Persisting `gene_ids`/`organism`/`config` alongside the weights is what PR #6 (HF Hub) and PR #7 (inference) need to reload a model against the right feature space. Single-command typer means `oqae-train config.yaml` with no redundant subcommand name. |
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
@@ -419,8 +431,10 @@ A running record of decisions so future sessions don't re-litigate them.
 
 ---
 
-**Last Updated**: 2026-06-22 — PR #4 complete: `OmicsVQVAE` (`models/vqvae.py`)
-wires the encoder, `ResidualVQ`, and a `ReconstructionHead` end to end.
-**Current Focus**: PR #5 — training/fine-tuning CLI + W&B tracking (offline-
-friendly tracker + training loop first; see `docs/STATUS.md`).
-**Next Review**: After PR #5 (training CLI + W&B).
+**Last Updated**: 2026-06-25 — PR #6 complete: `hf_utils.py` round-trips a
+trained `OmicsVQVAE` (state dict + codebooks + config + gene vocabulary) through
+a HuggingFace-style directory; the model is self-describing via
+`get_config()`/`from_config()`.
+**Current Focus**: PR #7 — discrete-code inference API (`inference/codes.py`:
+`encode → codes`, `decode → expression`; see `docs/STATUS.md`).
+**Next Review**: After PR #7 (discrete-code inference API).
