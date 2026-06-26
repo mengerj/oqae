@@ -37,7 +37,7 @@ Design notes
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, cast
 
 import torch
 from torch import Tensor, nn
@@ -215,6 +215,27 @@ class VectorQuantizer(nn.Module):
         """Return the codebook tensor (buffer under EMA, parameter otherwise)."""
         embedding: Tensor = self.embedding
         return embedding
+
+    def lookup(self, indices: Tensor) -> Tensor:
+        """
+        Map codebook indices back to their codebook vectors.
+
+        This is the inverse of the assignment step in :meth:`forward`: it embeds
+        discrete indices without computing distances or losses, so a stored code
+        can be turned back into its quantized vector for decoding/generation.
+
+        Parameters
+        ----------
+        indices : torch.Tensor
+            Codebook indices of arbitrary shape (``int64``); each value must lie
+            in ``[0, codebook_size)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Codebook vectors of shape ``indices.shape + (embedding_dim,)``.
+        """
+        return self._codebook()[indices]
 
     def forward(self, inputs: Tensor) -> QuantizerOutput:
         """
@@ -399,6 +420,45 @@ class ResidualVQ(nn.Module):
             )
             for _ in range(n_codebooks)
         )
+
+    def lookup(self, indices: Tensor) -> Tensor:
+        """
+        Reconstruct the summed quantized vector from per-level codebook indices.
+
+        This inverts the index half of :meth:`forward`: it maps a cell's discrete
+        code (one index per residual level) back to the summed quantized latent
+        that the decoder consumes, without recomputing the encoder/residuals.
+
+        Parameters
+        ----------
+        indices : torch.Tensor
+            Per-level codebook indices of shape ``(..., n_codebooks)``
+            (``int64``), as returned in :attr:`ResidualVQOutput.indices`.
+
+        Returns
+        -------
+        torch.Tensor
+            Summed quantized vectors of shape
+            ``indices.shape[:-1] + (embedding_dim,)``.
+
+        Raises
+        ------
+        ValueError
+            If the last dimension of ``indices`` is not ``n_codebooks``.
+        """
+        if indices.shape[-1] != self.n_codebooks:
+            raise ValueError(
+                f"indices last dim {indices.shape[-1]} != n_codebooks "
+                f"{self.n_codebooks}."
+            )
+        # ``n_codebooks >= 1`` is enforced in ``__init__``, so seed the sum with
+        # the first level and accumulate the rest (no Optional / assert needed).
+        first = cast(VectorQuantizer, self.quantizers[0])
+        quantized = first.lookup(indices[..., 0])
+        for level in range(1, self.n_codebooks):
+            quantizer = cast(VectorQuantizer, self.quantizers[level])
+            quantized = quantized + quantizer.lookup(indices[..., level])
+        return quantized
 
     def forward(self, inputs: Tensor) -> ResidualVQOutput:
         """

@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-25
+**Last updated:** 2026-06-26
 
 ## Current state
 
@@ -124,35 +124,62 @@
     eval-mode, every validation/error path, and the `from_checkpoint` bridge)
     plus `get_config`/`from_config` tests on the model; `make ci` green (~99.7%).
 
-## Next task — PR #7: Discrete-code inference API
+- **PR #7 (discrete-code inference API) — DONE (this PR). PR #7 complete.**
+  - `inference/codes.py` — the user-facing latent interface on top of a trained
+    `OmicsVQVAE`. `encode(model, counts, ...) → EncodedCells` turns raw counts
+    (tensor / ndarray / sparse) into discrete codes; `encode_anndata(loaded,
+    adata, ...)` aligns a local AnnData to the model's `GeneVocabulary`
+    (`align_to_reference`) first. `decode(model, codes_or_bundle, size_factors)`
+    maps codes back to **expected counts**; `decode_to_params` exposes the full
+    head distribution (for sampling/generation). All run the model in `eval` +
+    `no_grad` (EMA codebooks untouched) and restore its prior train/eval mode;
+    `encode`/`decode` are batched.
+  - **Code-vector format**: `EncodedCells.codes` is an `int64`
+    `(n_cells, n_codebooks)` tensor — row = a cell's discrete code, column `j` =
+    the index chosen from residual codebook `j` (in `[0, codebook_size)`).
+    Decoding also needs a per-cell `size_factor` (observed depth), which `encode`
+    returns alongside the codes; `decode` reuses the bundle's factors unless
+    overridden. `EncodedCells` also carries the continuous pre-quantization
+    `latent` for quantization-error inspection.
+  - **Inverse path added to the layer/model**: `VectorQuantizer.lookup` /
+    `ResidualVQ.lookup` (indices → summed quantized vector) and
+    `OmicsVQVAE.decode_codes` / `codes_to_params` (codes → expected counts /
+    head params), so codes → quantized vectors → `expected_counts` is a tested
+    model method rather than reaching into internals.
+  - No new deps; `uv.lock` unchanged. Offline tests at 100% coverage on
+    `inference/codes.py` (round-trip on held-out synthetic cells, batched ==
+    unbatched, numpy/sparse inputs, AnnData alignment incl. reordered/missing/
+    extra genes, size-factor scaling, eval-mode side-effect freedom, every
+    validation/error path) plus `lookup`/`decode_codes` tests; `make ci` green
+    (~99.7%).
 
-PR #6 is **DONE**. Next is the user-facing latent API on top of the trained
-model + HF loading:
+## Next task — PR #8: Examples & documentation
 
-1. `inference/codes.py` — `encode(adata) → discrete codes` and
-   `decode(codes) → expression` for the universal-latent use cases (compression,
-   generation, plugging codes back into the decoder). Operate on local AnnData
-   (align to the model's `GeneVocabulary` via `align_to_reference`) and/or raw
-   count tensors; return codes as `(n_cells, n_codebooks)` indices and an
-   inverse path that maps codes → quantized vectors → `expected_counts`.
-2. Reuse the loaded model from `omvqvae.hf_utils.load_pretrained` /
-   `from_pretrained` so inference runs on the right feature space. Document the
-   code-vector format. Keep it offline-testable on synthetic data.
+PR #7 is **DONE**. Next is PR #8 (Phase 3):
 
-**Definition of done:** round-trip encode→decode on held-out synthetic cells;
-documented code-vector format; CI green; PR opened.
+1. Example notebooks under `examples/` (or `docs/`): Census streaming training,
+   local `.h5ad` fine-tuning, and **code inspection / generation** using the new
+   `omvqvae.inference` API (`encode` → inspect codes → `decode` /
+   `decode_to_params`). Keep them runnable on tiny synthetic data so they don't
+   require network/Census.
+2. Sphinx docs scaffold (autodoc the public API: `data`, `layers`, `models`,
+   `train`, `inference`, `hf_utils`). Make `docs/` build.
 
-### Available building blocks
+**Definition of done:** docs build; examples run on small data; CI green; PR
+opened. Consider splitting into a slice (notebooks first, Sphinx second) if it
+grows beyond one PR-sized chunk.
 
+### Available building blocks (for PR #8)
+
+- `omvqvae.inference`: `encode` / `encode_anndata` / `decode` /
+  `decode_to_params` / `EncodedCells` — the latent API the examples demonstrate.
 - `omvqvae.hf_utils`: `save_pretrained` / `load_pretrained` / `from_checkpoint` /
-  `push_to_hub` / `from_pretrained`, returning a `LoadedModel`
-  (`model`/`vocabulary`/`experiment_config`). The model is self-describing via
-  `OmicsVQVAE.get_config()` / `OmicsVQVAE.from_config()`.
-- `omvqvae.models.vqvae.OmicsVQVAE`: `encode` / `quantize` / `encode_codes` /
-  `decode` / `expected_counts` already expose the code↔expression mapping the
-  inference API wraps.
-- `omvqvae.data`: `GeneVocabulary` / `align_to_reference` / `Minibatch` /
-  `load_anndata` / `extract_counts` for aligning input to the model's genes.
+  `push_to_hub` / `from_pretrained` → `LoadedModel`
+  (`model`/`vocabulary`/`experiment_config`).
+- `omvqvae.train`: `train` + `oqae-train` CLI (`run_experiment`, builders) and
+  `configs/train_toy.yaml` for the training examples.
+- `omvqvae.data`: `GeneVocabulary` / `align_to_reference` / `build_anndata_dataloader`
+  / `build_census_dataloader` for the data-loading examples.
 
 ## Open questions / parked
 
@@ -171,6 +198,22 @@ documented code-vector format; CI green; PR opened.
 
 ## Changelog (most recent first)
 
+- **2026-06-26** — PR #7: discrete-code inference API. Added the
+  `omvqvae.inference` package (`inference/codes.py`): `encode` /
+  `encode_anndata` turn raw counts / a local AnnData (aligned to the model's
+  `GeneVocabulary`) into an `EncodedCells` bundle (`codes`
+  `(n_cells, n_codebooks)` int64 + per-cell `size_factors` + continuous
+  `latent`); `decode` maps codes → expected counts and `decode_to_params`
+  exposes the full head distribution. Inference runs in `eval` + `no_grad`
+  (EMA codebooks untouched) with the model's prior mode restored, and is
+  batched. Added the inverse path to the layer/model: `VectorQuantizer.lookup`
+  / `ResidualVQ.lookup` (indices → summed quantized vector) and
+  `OmicsVQVAE.decode_codes` / `codes_to_params`. No new deps; `uv.lock`
+  unchanged. Offline tests at 100% coverage on `inference/codes.py`
+  (held-out round-trip, batched == unbatched, numpy/sparse, AnnData alignment
+  with reordered/missing/extra genes, size-factor scaling, eval-mode
+  side-effect freedom, all error paths); `make ci` green (~99.7%). **PR #7 is
+  now complete.**
 - **2026-06-25** — PR #6: HuggingFace Hub integration. Added top-level
   `hf_utils.py` — `save_pretrained` / `load_pretrained` round-trip a trained
   `OmicsVQVAE` (state dict + codebooks), its architecture config, and the gene
