@@ -390,6 +390,54 @@ class OmicsVQVAE(nn.Module):
         """Return the reconstruction mean for a quantized latent."""
         return self.head.expected_counts(self.decoder_body(quantized), size_factors)
 
+    def codes_to_params(self, codes: Tensor, size_factors: Tensor) -> Dict[str, Tensor]:
+        """
+        Decode discrete codes to the reconstruction-likelihood parameters.
+
+        Inverts the index half of :meth:`encode_codes`: the per-level codebook
+        indices are mapped back to the summed quantized latent
+        (:meth:`~omvqvae.layers.residual_vq.ResidualVQ.lookup`) and decoded to the
+        per-gene distribution parameters.
+
+        Parameters
+        ----------
+        codes : torch.Tensor
+            Per-level codebook indices of shape ``(batch, n_codebooks)``
+            (``int64``).
+        size_factors : torch.Tensor
+            Per-cell size factors of shape ``(batch,)``.
+
+        Returns
+        -------
+        Dict[str, torch.Tensor]
+            The per-gene distribution parameters (see the configured head).
+        """
+        return self.decode(self.rvq.lookup(codes), size_factors)
+
+    def decode_codes(self, codes: Tensor, size_factors: Tensor) -> Tensor:
+        """
+        Reconstruct expected counts directly from discrete codes.
+
+        Inverse of :meth:`encode_codes`: maps a cell's per-level codebook indices
+        back to the summed quantized latent and decodes it to the reconstruction
+        mean (depth-appropriate expected counts for NB/ZINB; ``log1p`` expression
+        for the Gaussian head).
+
+        Parameters
+        ----------
+        codes : torch.Tensor
+            Per-level codebook indices of shape ``(batch, n_codebooks)``
+            (``int64``).
+        size_factors : torch.Tensor
+            Per-cell size factors of shape ``(batch,)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Reconstruction mean of shape ``(batch, n_genes)``.
+        """
+        return self.expected_counts(self.rvq.lookup(codes), size_factors)
+
     def forward(self, counts: Tensor, size_factors: Tensor) -> VQVAEOutput:
         """
         Encode, quantize, decode, and compose the loss for a batch.
