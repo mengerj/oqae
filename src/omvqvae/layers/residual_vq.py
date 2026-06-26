@@ -37,7 +37,7 @@ Design notes
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, cast
+from typing import List, cast
 
 import torch
 from torch import Tensor, nn
@@ -451,13 +451,13 @@ class ResidualVQ(nn.Module):
                 f"indices last dim {indices.shape[-1]} != n_codebooks "
                 f"{self.n_codebooks}."
             )
-        quantized: Optional[Tensor] = None
-        for level in range(self.n_codebooks):
+        # ``n_codebooks >= 1`` is enforced in ``__init__``, so seed the sum with
+        # the first level and accumulate the rest (no Optional / assert needed).
+        first = cast(VectorQuantizer, self.quantizers[0])
+        quantized = first.lookup(indices[..., 0])
+        for level in range(1, self.n_codebooks):
             quantizer = cast(VectorQuantizer, self.quantizers[level])
-            vectors = quantizer.lookup(indices[..., level])
-            quantized = vectors if quantized is None else quantized + vectors
-        # ``n_codebooks >= 1`` is enforced in ``__init__`` so the loop always runs.
-        assert quantized is not None
+            quantized = quantized + quantizer.lookup(indices[..., level])
         return quantized
 
     def forward(self, inputs: Tensor) -> ResidualVQOutput:
