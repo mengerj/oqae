@@ -327,10 +327,17 @@ src/omvqvae/
   documented code-vector format (see `inference/codes.py` module docstring); 100%
   offline coverage on the module; `make ci` green.
 
-#### **PR #8: Examples & Documentation**
-- **Scope**: notebooks (Census streaming, local fine-tuning, code
+#### **PR #8: Examples & Documentation — 🚧 IN PROGRESS (slice 1 done)**
+- **Scope**: examples (Census streaming, local fine-tuning, code
   inspection/generation), Sphinx docs.
-- **Exit criteria**: docs build; examples run on small data.
+- **Status**: *Slice 1* (example scripts) **DONE** — `examples/` holds three
+  runnable scripts (`01_train_local_anndata.py`,
+  `02_inspect_and_generate_codes.py`, `03_census_streaming.py`), a `README.md`,
+  and a shared offline `synthetic_data.py` helper; offline examples are
+  smoke-tested in `tests/test_examples.py`. *Slice 2* (Sphinx docs scaffold +
+  autodoc of the public API) is next.
+- **Exit criteria**: docs build; examples run on small data. Examples met
+  (offline, CI-tested); the docs build is slice 2.
 
 #### **PR #9: Benchmarking & Scaling**
 - **Scope**: raw-count+NB vs log-normalized+Gaussian comparison; codebook
@@ -425,6 +432,7 @@ A running record of decisions so future sessions don't re-litigate them.
 | 2026-06-22 | **`OmicsVQVAE` = symmetric MLP encoder/decoder around `ResidualVQ` + a `ReconstructionHead`.** Encoder input is internally `log1p`-transformed for numerical stability; the reconstruction *target* is raw counts for NB/ZINB and `log1p` expression for the Gaussian head. Decoder hidden widths mirror the encoder (`hidden_dims` reversed); the head consumes the final decoder hidden dim. `forward` returns a `VQVAEOutput` composing recon + VQ loss with the per-level codes and codebook metrics. Total loss = `reconstruction_loss + vq.loss` (per-cell-mean recon NLL + mean VQ loss), unweighted in v1. | Keeps depth/normalization handling inside the model and count statistics intact; one symmetric, configurable module covers all three likelihoods. The `VQVAEOutput` bundle hands PR #5 its loss + W&B monitoring signals without coupling to the layer internals. Loss-term weighting is left as a future tuning knob. |
 | 2026-06-25 | **HF serialization = self-describing model + a HuggingFace-style directory.** Added `OmicsVQVAE.get_config()` / `from_config()` (the model carries every constructor hyper-parameter), so `hf_utils.save_pretrained` writes `config.json` (`{format_version, organism, gene_ids, model=get_config(), experiment_config}`) + `pytorch_model.bin` and `load_pretrained` rebuilds the exact model/feature space — decoupled from the training CLI. `hf_utils.py` lives at the **package top level** (per the package-structure diagram, not under `models/` or `inference/`). `from_checkpoint` converts a CLI `{state_dict, organism, gene_ids, config}` bundle into the same directory shape so both share one format; `push_to_hub` / `from_pretrained` are thin `huggingface_hub` shells (`# pragma: no cover`, network-gated) wrapping the tested pure save/load step. Added direct dep `huggingface-hub>=0.20.0` (already transitive via `transformers`). | Making the model self-describing is the standard HF `PreTrainedModel` pattern and keeps serialization independent of `train.cli`/OmegaConf. A plain JSON+weights directory *is* a Hub-ready repo and is fully offline-testable, leaving only upload/download as the networked edge. Reusing the CLI bundle's architecture fields via `from_checkpoint` avoids two divergent on-disk formats. |
 | 2026-06-26 | **Discrete-code inference API = free functions over a trained model returning an `EncodedCells` bundle, with the code→vector inverse path pushed into the layer/model.** `inference/codes.py` exposes `encode`/`encode_anndata` (→ `EncodedCells{codes (n_cells, n_codebooks) int64, size_factors, latent}`) and `decode`/`decode_to_params`. The codes alone don't reconstruct depth — decoding needs a per-cell `size_factor`, so `encode` returns it in the bundle and `decode` reuses it (overridable). The inverse `indices → summed quantized vector` is a tested `ResidualVQ.lookup` / `OmicsVQVAE.decode_codes` method rather than reaching into codebook buffers. All inference forces `eval` + `no_grad` (so EMA/dead-code stats aren't mutated) and restores the prior mode; `encode`/`decode` are batched. `encode_anndata` takes a `LoadedModel` and aligns via `align_to_reference` (annotation under `TYPE_CHECKING` to avoid an import cycle / heavy import). | Free functions keep the API thin and match the functional style of the data/train layers; the `EncodedCells` bundle makes the codes+size-factor pair (the actual compressed representation) explicit and gives a frictionless `decode(model, encode(model, x))` round-trip. Putting `lookup`/`decode_codes` on the layer/model keeps inference decoupled from quantizer internals and is reusable by generation/benchmarking PRs. Forcing eval/no_grad prevents inference from silently drifting the codebooks. |
+| 2026-06-27 | **Examples = standalone runnable scripts under `examples/` (not notebooks), smoke-tested offline.** Three scripts share one synthetic-data helper (`synthetic_data.py`): local-AnnData training+`save_pretrained` (1), the full `omvqvae.inference` encode→inspect→decode→generate walk via a `save_pretrained`/`load_pretrained` round-trip (2), and Census streaming (3, network-gated). Each exposes a `main()`; `tests/test_examples.py` imports them via `importlib` and runs the offline ones end to end (example 3's `main` only under `@pytest.mark.network`). Examples live outside the `src` coverage scope, so they don't move the coverage gate. Split PR #8 into slices: scripts first (this PR), Sphinx docs second. | Plain `.py` scripts are diffable, lint/format-clean, and — unlike notebooks — runnable in CI with no `nbconvert`/`jupyter` execution layer, so the documented workflows are guaranteed to keep working. A shared synthetic helper keeps them tiny and offline. Reusing `save_pretrained`/`load_pretrained` in example 2 also exercises the HF round-trip the way a real user would (`from_pretrained` → `LoadedModel` → `encode_anndata`). Slicing keeps each run to one CI-verifiable chunk; the Sphinx scaffold needs new docs deps + a build target and slots in next. |
 | 2026-06-24 | **Training CLI = OmegaConf structured config + a single-command typer app (`oqae-train`).** The config schema is plain dataclasses (`ExperimentConfig`/`ModelConfig`/`DataConfig`/`TrainingConfig`/`TrackingConfig`) so OmegaConf validates the YAML, rejects unknown keys, and supports `--set a.b=c` dot-list overrides; `OmegaConf.to_object` yields typed objects for mypy. Pure builders (`build_model`/`build_train_config`/`build_tracker_from_config`/`build_data`) map one config section → one object and `run_experiment` wires them, so the config→objects path is unit-tested offline. The **local-AnnData** source derives its `GeneVocabulary` (hence the model's `n_genes`) from the file's own genes; the **Census** source is the one networked branch (`# pragma: no cover`). The optional checkpoint stores `{state_dict, organism, gene_ids, config}`. | A declarative, schema-checked config keeps runs reproducible and overridable from the shell; the pure-builder split keeps the heavy/networked I/O at the edges and everything else offline-testable (incl. via Typer's `CliRunner`). Persisting `gene_ids`/`organism`/`config` alongside the weights is what PR #6 (HF Hub) and PR #7 (inference) need to reload a model against the right feature space. Single-command typer means `oqae-train config.yaml` with no redundant subcommand name. |
 
 ## 🔄 **Future Roadmap (Post-v1.0)**
@@ -442,12 +450,11 @@ A running record of decisions so future sessions don't re-litigate them.
 
 ---
 
-**Last Updated**: 2026-06-26 — PR #7 complete: `omvqvae.inference`
-(`inference/codes.py`) is the discrete-code latent API — `encode`/`encode_anndata`
-→ `EncodedCells` (codes + size factors + latent), `decode`/`decode_to_params` →
-expression, with the code→vector inverse path (`ResidualVQ.lookup` /
-`OmicsVQVAE.decode_codes`) on the layer/model.
-**Current Focus**: PR #8 — examples & documentation (notebooks for Census
-streaming / local fine-tuning / code inspection + generation; Sphinx docs; see
-`docs/STATUS.md`).
-**Next Review**: After PR #8 (examples & documentation).
+**Last Updated**: 2026-06-27 — PR #8 slice 1 complete: `examples/` holds three
+runnable scripts (local-AnnData training, the encode→inspect→decode→generate
+inference walk, and Census streaming) over a shared offline synthetic-data
+helper, smoke-tested in `tests/test_examples.py`.
+**Current Focus**: PR #8 slice 2 — Sphinx docs scaffold (autodoc the public API:
+`data`, `layers`, `models`, `train`, `inference`, `hf_utils`,
+`utils.tracking`; getting-started page linking the examples); see `docs/STATUS.md`.
+**Next Review**: After PR #8 slice 2 (Sphinx documentation).
