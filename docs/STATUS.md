@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-26
+**Last updated:** 2026-06-27
 
 ## Current state
 
@@ -153,33 +153,46 @@
     validation/error path) plus `lookup`/`decode_codes` tests; `make ci` green
     (~99.7%).
 
-## Next task — PR #8: Examples & documentation
+- **PR #8 slice 1 (example scripts) — DONE (this PR).**
+  - `examples/` — three runnable, self-contained scripts plus a `README.md`
+    overview and a shared `synthetic_data.py` helper (a tiny raw-count AnnData
+    with latent "programs", offline). `01_train_local_anndata.py` trains an
+    `OmicsVQVAE` on a local AnnData (derive `GeneVocabulary` → `train` →
+    `save_pretrained`); `02_inspect_and_generate_codes.py` walks the full
+    `omvqvae.inference` API (`encode_anndata` → inspect codebook usage /
+    program structure → `decode` → `decode_to_params` → generate a novel profile
+    from edited codes, round-tripping through `save_pretrained`/`load_pretrained`);
+    `03_census_streaming.py` streams a Census slice (network-gated, same
+    `Minibatch` contract as example 1).
+  - `tests/test_examples.py` smoke-tests the offline examples end to end (each
+    `main()` runs on tiny synthetic data via `importlib`) and imports the Census
+    example to catch regressions (its `main` runs only under `@pytest.mark.network`).
+    Examples live under `examples/` (outside the `src` coverage scope), so they
+    don't affect the coverage gate; `make ci` green (~99.7%). No new deps.
 
-PR #7 is **DONE**. Next is PR #8 (Phase 3):
+## Next task — PR #8 slice 2: Sphinx documentation
 
-1. Example notebooks under `examples/` (or `docs/`): Census streaming training,
-   local `.h5ad` fine-tuning, and **code inspection / generation** using the new
-   `omvqvae.inference` API (`encode` → inspect codes → `decode` /
-   `decode_to_params`). Keep them runnable on tiny synthetic data so they don't
-   require network/Census.
-2. Sphinx docs scaffold (autodoc the public API: `data`, `layers`, `models`,
-   `train`, `inference`, `hf_utils`). Make `docs/` build.
+PR #8 slice 1 (example scripts) is **DONE**. Next is slice 2 — the Sphinx docs
+scaffold:
 
-**Definition of done:** docs build; examples run on small data; CI green; PR
-opened. Consider splitting into a slice (notebooks first, Sphinx second) if it
-grows beyond one PR-sized chunk.
+1. Add a Sphinx project under `docs/` (e.g. `docs/source/`) with `conf.py`
+   (autodoc + napoleon for the NumPy docstrings) and an index that autodocs the
+   public API: `data`, `layers`, `models`, `train`, `inference`, `hf_utils`,
+   `utils.tracking`.
+2. A short narrative/getting-started page linking the `examples/` scripts.
+3. Make `docs/` build (`sphinx-build` clean); wire a `make docs` target. Add the
+   docs deps (`sphinx`, a theme, e.g. `furo`/`sphinx-rtd-theme`) under a `docs`
+   extra and refresh `uv.lock` in the same PR.
 
-### Available building blocks (for PR #8)
+**Definition of done:** `docs/` build clean; CI green; PR opened. Decide whether
+to also add a CI job that builds the docs (optional — can defer to PR #10).
 
-- `omvqvae.inference`: `encode` / `encode_anndata` / `decode` /
-  `decode_to_params` / `EncodedCells` — the latent API the examples demonstrate.
-- `omvqvae.hf_utils`: `save_pretrained` / `load_pretrained` / `from_checkpoint` /
-  `push_to_hub` / `from_pretrained` → `LoadedModel`
-  (`model`/`vocabulary`/`experiment_config`).
-- `omvqvae.train`: `train` + `oqae-train` CLI (`run_experiment`, builders) and
-  `configs/train_toy.yaml` for the training examples.
-- `omvqvae.data`: `GeneVocabulary` / `align_to_reference` / `build_anndata_dataloader`
-  / `build_census_dataloader` for the data-loading examples.
+### Available building blocks (for PR #8 slice 2)
+
+- `examples/` — the runnable scripts to link from a getting-started page.
+- Public API to autodoc: `omvqvae.data`, `omvqvae.layers`, `omvqvae.models`,
+  `omvqvae.train`, `omvqvae.inference`, `omvqvae.hf_utils`,
+  `omvqvae.utils.tracking` (all NumPy-docstringed).
 
 ## Open questions / parked
 
@@ -198,6 +211,20 @@ grows beyond one PR-sized chunk.
 
 ## Changelog (most recent first)
 
+- **2026-06-27** — PR #8 slice 1: example scripts. Added `examples/` — three
+  runnable, self-contained scripts (`01_train_local_anndata.py`,
+  `02_inspect_and_generate_codes.py`, `03_census_streaming.py`), a `README.md`
+  overview, and a shared offline `synthetic_data.py` helper (tiny raw-count
+  AnnData with latent "programs"). Example 1 trains on a local AnnData and
+  `save_pretrained`s; example 2 walks the full `omvqvae.inference` API
+  (encode → inspect codebook usage / program structure → decode →
+  `decode_to_params` → generate from edited codes, via a
+  `save_pretrained`/`load_pretrained` round-trip); example 3 streams a Census
+  slice (network-gated). `tests/test_examples.py` smoke-tests the offline
+  examples end to end (importlib-driven `main()` on tiny data) and imports the
+  Census example (its `main` runs only under `@pytest.mark.network`). Examples
+  sit outside the `src` coverage scope, so the gate is unaffected; no new deps;
+  `make ci` green (~99.7%). Slice 2 (Sphinx docs) is the next chunk.
 - **2026-06-26** — PR #7: discrete-code inference API. Added the
   `omvqvae.inference` package (`inference/codes.py`): `encode` /
   `encode_anndata` turn raw counts / a local AnnData (aligned to the model's
