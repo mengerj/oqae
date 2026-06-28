@@ -54,6 +54,10 @@ dev = [
     "pre-commit>=3.4.0",
     "coverage>=7.3.0",
 ]
+docs = [
+    "sphinx>=7.0.0",
+    "furo>=2024.1.29",
+]
 
 [project.scripts]
 oqae-train = "omvqvae.train.cli:main"

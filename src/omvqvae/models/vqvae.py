@@ -6,10 +6,10 @@ vector quantizer (:mod:`omvqvae.layers.residual_vq`) and the reconstruction
 heads (:mod:`omvqvae.models.likelihoods`) — into a single
 :class:`torch.nn.Module`:
 
-```
-raw counts ─► (internal log1p) ─► Encoder ─► ResidualVQ ─► Decoder ─► NB/ZINB
-                                              (discrete codes)         params
-```
+.. code-block:: text
+
+    raw counts ─► (internal log1p) ─► Encoder ─► ResidualVQ ─► Decoder ─► NB/ZINB
+                                                  (discrete codes)         params
 
 The model ingests **raw counts** and an observed per-cell **size factor**. An
 internal ``log1p`` transform is applied to the encoder input for numerical
