@@ -122,6 +122,17 @@ module = [
 ]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# Sphinx (installed via the ``docs`` extra) is never imported by ``omvqvae`` but
+# is reachable in mypy's transitive import graph. Don't follow into its source:
+# recent Sphinx uses PEP 695 ``type`` statements that fail to parse under the
+# pinned 3.11 grammar (only surfaces on a 3.12 interpreter).
+module = [
+    "sphinx.*",
+]
+follow_imports = "skip"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
