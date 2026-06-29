@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-28
+**Last updated:** 2026-06-29
 
 ## Current state
 
@@ -191,33 +191,53 @@
     to RST `.. code-block:: text` literal blocks so the build is warning-clean.
     `make ci` green (~99.7%); `make docs` clean.
 
-## Next task — PR #9: Benchmarking & Scaling
+- **PR #9 slice 1 (benchmarking harness) — DONE (this PR).**
+  - `src/omvqvae/benchmark/` — the offline metrics/reporting scaffold for PR #9.
+    `metrics.py` holds dependency-light pure functions: `codebook_usage`
+    (dataset-level per-level **perplexity** + **utilization** = the collapse
+    signal), `separability_score` (nearest-centroid resubstitution accuracy of
+    the latent vs known labels = downstream-separability proxy), and
+    `reconstruction_metrics` (mean per-cell **NLL** + expected-vs-target **MAE**
+    in the head's native space, run in `eval`+`no_grad` so the EMA codebooks are
+    untouched). `harness.py` adds `BenchmarkConfig` / `BenchmarkResult`,
+    `evaluate_model`, `run_benchmark` / `run_suite` (build a model from a config
+    → `omvqvae.train.train` over an injected re-iterable `Minibatch` source →
+    `evaluate_model` on held-out counts/labels; seeded for reproducibility), and
+    `format_results_table` / `results_to_dicts` (Markdown comparison table / CSV
+    rows). Reuses `omvqvae.inference.encode` for the codes+latent and
+    `OmicsVQVAE.decode_codes` for the MAE.
+  - `examples/04_benchmark_configs.py` runs a tiny NB-vs-Gaussian + codebook-
+    capacity sweep on synthetic data and prints the comparison table (offline,
+    smoke-tested). Wired into `examples/README.md` and the Sphinx `api.rst`.
+  - No new deps; `uv.lock` unchanged. Offline tests at 100% on the benchmark
+    package (pure-metric edge cases, eval-mode side-effect freedom, harness
+    train+evaluate, reproducibility, suite + reporting); `make ci` green
+    (~99.6%).
 
-PR #8 is **complete** (examples + Sphinx docs). Next is **PR #9** (see
-`docs/PROJECT_PLAN.md` → Phase 3):
+## Next task — PR #9 slice 2: likelihood / codebook sweeps + the report
 
-- **Scope**: raw-count+NB vs log-normalized+Gaussian comparison; codebook
-  config sweeps (`n_codebooks` / `codebook_size`); streaming throughput/scaling.
-- **Exit criteria**: a benchmark report covering reconstruction quality,
-  codebook utilization (perplexity / no-collapse), downstream separability, and
-  streaming throughput.
-- This also resolves the parked **NB vs ZINB vs Gaussian** and **batch-effect
-  conditioning** open questions empirically (both were deferred to PR #9).
+Slice 1 (the metrics/reporting scaffold) is **done**. Next slices for **PR #9**
+(see `docs/PROJECT_PLAN.md` → Phase 3):
 
-**Suggested first slice**: a small, offline-runnable benchmarking harness
-(`benchmarks/` or `src/omvqvae/benchmark/`) that trains tiny models under a few
-likelihood/codebook configs on synthetic data and emits a comparison table of
-reconstruction loss + codebook perplexity — establishing the metrics/reporting
-scaffold before wiring real Census-scale sweeps. Keep it offline-by-default with
-the live/large sweeps network-gated, matching the existing test discipline.
+- **Slice 2 — empirical sweeps + report**: use `omvqvae.benchmark.run_suite` to
+  run a fuller grid — **raw-count+NB vs log-normalized+Gaussian** and codebook
+  sweeps (`n_codebooks` × `codebook_size`) — on a more realistic fixture (more
+  cells/genes/programs, more epochs), and write the **benchmark report**
+  (`docs/` or a notebook-free Markdown page) interpreting reconstruction
+  quality, codebook utilization (no-collapse), and downstream separability. This
+  is where the parked **NB vs ZINB vs Gaussian** and **batch-effect
+  conditioning** questions get answered empirically.
+- **Slice 3 — streaming throughput/scaling**: a network-gated benchmark of
+  Census streaming throughput (cells/s, time-to-N-steps) reusing the same
+  `BenchmarkConfig`/`run_benchmark` contract over `build_census_dataloader`.
 
-### Available building blocks (for PR #9)
+### Building blocks already in place (for the remaining PR #9 slices)
 
-- `omvqvae.train.train` / `TrainConfig` — the source-agnostic loop to run each
-  benchmark config; `vqvae_metrics` flattens a `VQVAEOutput` (losses + codebook
-  perplexity/usage) for reporting.
-- `OmicsVQVAE(likelihood=..., n_codebooks=..., codebook_size=...)` — the knobs
-  to sweep; `build_reconstruction_head` exposes `LIKELIHOODS`.
+- `omvqvae.benchmark.{run_suite, BenchmarkConfig, format_results_table,
+  results_to_dicts}` — the harness + reporting from slice 1.
+- `omvqvae.train.train` / `TrainConfig` — the source-agnostic loop used per
+  config; `build_census_dataloader` provides the streamed `Minibatch` source for
+  slice 3.
 - `examples/synthetic_data.py` — the offline raw-count AnnData fixture (latent
   "programs") to benchmark reconstruction/separability against a known signal.
 
@@ -238,6 +258,21 @@ the live/large sweeps network-gated, matching the existing test discipline.
 
 ## Changelog (most recent first)
 
+- **2026-06-29** — PR #9 slice 1: benchmarking harness. Added
+  `src/omvqvae/benchmark/` — pure metrics (`codebook_usage` perplexity/
+  utilization, `separability_score` nearest-centroid latent separability,
+  `reconstruction_metrics` NLL/MAE evaluated in `eval`+`no_grad`) plus a thin
+  harness (`BenchmarkConfig`/`BenchmarkResult`, `evaluate_model`,
+  `run_benchmark`/`run_suite`, `format_results_table`/`results_to_dicts`) that
+  trains tiny models under several likelihood/codebook configs over an injected
+  re-iterable `Minibatch` source and emits a Markdown comparison table. Reuses
+  `omvqvae.train.train`, `inference.encode`, and `OmicsVQVAE.decode_codes`.
+  Added `examples/04_benchmark_configs.py` (offline NB-vs-Gaussian + codebook
+  sweep, smoke-tested) and documented the module in `examples/README.md` +
+  Sphinx `api.rst`. No new deps; `uv.lock` unchanged. Offline tests at 100% on
+  the benchmark package; `make ci` green (~99.6%). This is the metrics/reporting
+  scaffold; the empirical sweeps + report (slice 2) and Census throughput
+  benchmark (slice 3) are next.
 - **2026-06-28** — PR #8 slice 2: Sphinx documentation. Added a Sphinx project
   under `docs/source/` (`conf.py` with `autodoc` + `napoleon` for the NumPy
   docstrings, `viewcode`, `intersphinx`, `furo` theme): `index.rst` (landing

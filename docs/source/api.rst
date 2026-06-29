@@ -64,6 +64,19 @@ back into expression.
 .. automodule:: omvqvae.inference.codes
    :members:
 
+Benchmarking (:mod:`omvqvae.benchmark`)
+---------------------------------------
+
+Offline-runnable harness to compare likelihood / codebook configurations:
+reconstruction quality, codebook utilization, and downstream separability, with
+a comparison-table report.
+
+.. automodule:: omvqvae.benchmark.metrics
+   :members:
+
+.. automodule:: omvqvae.benchmark.harness
+   :members:
+
 Serialization (:mod:`omvqvae.hf_utils`)
 ---------------------------------------
 
