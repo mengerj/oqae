@@ -5,10 +5,10 @@ This is the user-facing latent interface on top of a trained
 :class:`~omvqvae.models.vqvae.OmicsVQVAE`: it turns expression into the model's
 **discrete universal codes** and turns codes back into expression.
 
-```
-counts ──encode──► codes (n_cells, n_codebooks)  ──decode──► expected counts
-                   + per-cell size factor
-```
+.. code-block:: text
+
+    counts ──encode──► codes (n_cells, n_codebooks)  ──decode──► expected counts
+                       + per-cell size factor
 
 The two halves enable the universal-latent use cases:
 

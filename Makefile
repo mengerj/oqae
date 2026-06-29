@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test lint format type-check clean setup-env
+.PHONY: help install install-dev test lint format type-check clean setup-env docs docs-clean
 
 # Default target
 help:
@@ -19,6 +19,10 @@ help:
 	@echo "  type-check    - Run type checking (mypy strict)"
 	@echo "  pre-commit    - Run pre-commit hooks"
 	@echo "  ci            - Run full CI pipeline locally (matches GitHub)"
+	@echo ""
+	@echo "📚 Documentation:"
+	@echo "  docs          - Build Sphinx HTML docs (warnings-as-errors)"
+	@echo "  docs-clean    - Remove built docs (docs/_build/)"
 	@echo ""
 	@echo "🔄 Workflow Management:"
 	@echo "  issue              - Create new GitHub issue"
@@ -81,6 +85,15 @@ type-check:
 
 pre-commit:
 	uv run pre-commit run --all-files
+
+# Documentation
+docs:
+	@echo "📚 Building Sphinx documentation..."
+	uv run --extra docs sphinx-build -b html -W --keep-going docs/source docs/_build/html
+	@echo "✅ Docs built at docs/_build/html/index.html"
+
+docs-clean:
+	rm -rf docs/_build/
 
 # Cleaning
 clean:

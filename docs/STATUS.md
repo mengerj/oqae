@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-27
+**Last updated:** 2026-06-28
 
 ## Current state
 
@@ -170,29 +170,56 @@
     Examples live under `examples/` (outside the `src` coverage scope), so they
     don't affect the coverage gate; `make ci` green (~99.7%). No new deps.
 
-## Next task — PR #8 slice 2: Sphinx documentation
+- **PR #8 slice 2 (Sphinx documentation) — DONE (this PR). PR #8 complete.**
+  - `docs/source/` — a Sphinx project (`conf.py` with `autodoc` + `napoleon`
+    for the NumPy docstrings, `viewcode`, `intersphinx`; `furo` theme). `index.rst`
+    is the landing page (project overview + highlights + toctree);
+    `getting_started.rst` is a narrative walk-through (install → train local /
+    Census → encode/decode → save/share) linking the `examples/` scripts on
+    GitHub; `api.rst` autodocs the full public API by implementation module
+    (`data.dataset`/`normalize`/`anndata_io`/`census`, `layers.residual_vq`,
+    `models.likelihoods`/`vqvae`, `train.loop`/`cli`, `inference.codes`,
+    `hf_utils`, `utils.tracking`).
+  - Wired a `make docs` (and `docs-clean`) target running `sphinx-build -W
+    --keep-going` (warnings-as-errors) into `docs/_build/html` (already
+    gitignored). Added a `docs` extra (`sphinx>=7`, `furo`) and refreshed
+    `uv.lock`. Added a **`docs` CI job** that builds the docs warnings-as-errors
+    so they stay buildable (the optional CI-docs decision — done now rather than
+    deferred to PR #10).
+  - Fixed two module docstrings (`models/vqvae.py`, `inference/codes.py`) whose
+    Markdown ```` ``` ```` code fences aren't valid reStructuredText → converted
+    to RST `.. code-block:: text` literal blocks so the build is warning-clean.
+    `make ci` green (~99.7%); `make docs` clean.
 
-PR #8 slice 1 (example scripts) is **DONE**. Next is slice 2 — the Sphinx docs
-scaffold:
+## Next task — PR #9: Benchmarking & Scaling
 
-1. Add a Sphinx project under `docs/` (e.g. `docs/source/`) with `conf.py`
-   (autodoc + napoleon for the NumPy docstrings) and an index that autodocs the
-   public API: `data`, `layers`, `models`, `train`, `inference`, `hf_utils`,
-   `utils.tracking`.
-2. A short narrative/getting-started page linking the `examples/` scripts.
-3. Make `docs/` build (`sphinx-build` clean); wire a `make docs` target. Add the
-   docs deps (`sphinx`, a theme, e.g. `furo`/`sphinx-rtd-theme`) under a `docs`
-   extra and refresh `uv.lock` in the same PR.
+PR #8 is **complete** (examples + Sphinx docs). Next is **PR #9** (see
+`docs/PROJECT_PLAN.md` → Phase 3):
 
-**Definition of done:** `docs/` build clean; CI green; PR opened. Decide whether
-to also add a CI job that builds the docs (optional — can defer to PR #10).
+- **Scope**: raw-count+NB vs log-normalized+Gaussian comparison; codebook
+  config sweeps (`n_codebooks` / `codebook_size`); streaming throughput/scaling.
+- **Exit criteria**: a benchmark report covering reconstruction quality,
+  codebook utilization (perplexity / no-collapse), downstream separability, and
+  streaming throughput.
+- This also resolves the parked **NB vs ZINB vs Gaussian** and **batch-effect
+  conditioning** open questions empirically (both were deferred to PR #9).
 
-### Available building blocks (for PR #8 slice 2)
+**Suggested first slice**: a small, offline-runnable benchmarking harness
+(`benchmarks/` or `src/omvqvae/benchmark/`) that trains tiny models under a few
+likelihood/codebook configs on synthetic data and emits a comparison table of
+reconstruction loss + codebook perplexity — establishing the metrics/reporting
+scaffold before wiring real Census-scale sweeps. Keep it offline-by-default with
+the live/large sweeps network-gated, matching the existing test discipline.
 
-- `examples/` — the runnable scripts to link from a getting-started page.
-- Public API to autodoc: `omvqvae.data`, `omvqvae.layers`, `omvqvae.models`,
-  `omvqvae.train`, `omvqvae.inference`, `omvqvae.hf_utils`,
-  `omvqvae.utils.tracking` (all NumPy-docstringed).
+### Available building blocks (for PR #9)
+
+- `omvqvae.train.train` / `TrainConfig` — the source-agnostic loop to run each
+  benchmark config; `vqvae_metrics` flattens a `VQVAEOutput` (losses + codebook
+  perplexity/usage) for reporting.
+- `OmicsVQVAE(likelihood=..., n_codebooks=..., codebook_size=...)` — the knobs
+  to sweep; `build_reconstruction_head` exposes `LIKELIHOODS`.
+- `examples/synthetic_data.py` — the offline raw-count AnnData fixture (latent
+  "programs") to benchmark reconstruction/separability against a known signal.
 
 ## Open questions / parked
 
@@ -211,6 +238,18 @@ to also add a CI job that builds the docs (optional — can defer to PR #10).
 
 ## Changelog (most recent first)
 
+- **2026-06-28** — PR #8 slice 2: Sphinx documentation. Added a Sphinx project
+  under `docs/source/` (`conf.py` with `autodoc` + `napoleon` for the NumPy
+  docstrings, `viewcode`, `intersphinx`, `furo` theme): `index.rst` (landing
+  page + toctree), `getting_started.rst` (narrative install → train → encode /
+  decode → save walk-through linking the `examples/` scripts), and `api.rst`
+  (autodoc of the full public API by implementation module). Wired `make docs` /
+  `docs-clean` (`sphinx-build -W --keep-going` → `docs/_build/html`) and a `docs`
+  CI job (warnings-as-errors). Added a `docs` extra (`sphinx>=7`, `furo`) and
+  refreshed `uv.lock`. Converted the Markdown code fences in two module
+  docstrings (`models/vqvae.py`, `inference/codes.py`) to RST literal blocks so
+  the build is warning-clean. `make ci` green (~99.7%); `make docs` clean. **PR
+  #8 is now complete.** Next is PR #9 (benchmarking & scaling).
 - **2026-06-27** — PR #8 slice 1: example scripts. Added `examples/` — three
   runnable, self-contained scripts (`01_train_local_anndata.py`,
   `02_inspect_and_generate_codes.py`, `03_census_streaming.py`), a `README.md`
