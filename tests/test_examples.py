@@ -63,6 +63,15 @@ def test_example_02_inspects_and_generates(tmp_path: Path) -> None:
     module.main(workdir=tmp_path)
 
 
+def test_example_04_benchmarks_configs() -> None:
+    """Example 4 trains a small config sweep and renders a comparison table."""
+    module = _load_example("04_benchmark_configs.py")
+    table = module.main()
+    assert table.startswith("| name")
+    # Header + separator + one row per benchmarked config.
+    assert len(table.splitlines()) == 6
+
+
 def test_example_03_imports() -> None:
     """The Census example imports cleanly (its ``main`` is network-gated)."""
     module = _load_example("03_census_streaming.py")

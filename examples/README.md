@@ -1,7 +1,7 @@
 # OQAE examples
 
 Runnable, self-contained scripts demonstrating the OQAE API end to end. Examples
-1 and 2 run **offline in seconds** on tiny synthetic counts (see
+1, 2, and 4 run **offline in seconds** on tiny synthetic counts (see
 [`synthetic_data.py`](synthetic_data.py)); example 3 streams from the CZ
 CELLxGENE Census and needs network access.
 
@@ -10,6 +10,7 @@ CELLxGENE Census and needs network access.
 | 1 | [`01_train_local_anndata.py`](01_train_local_anndata.py) | Train / fine-tune on a local `.h5ad` / `.zarr` of raw counts, then save a Hub-ready model directory. | ✅ |
 | 2 | [`02_inspect_and_generate_codes.py`](02_inspect_and_generate_codes.py) | Encode cells to discrete codes, inspect codebook usage, decode codes back to expression, and generate a novel profile from edited codes. | ✅ |
 | 3 | [`03_census_streaming.py`](03_census_streaming.py) | Train at scale by streaming a Census slice via TileDB-SOMA (same `Minibatch` contract as example 1). | ❌ (network) |
+| 4 | [`04_benchmark_configs.py`](04_benchmark_configs.py) | Benchmark likelihood / codebook configs on shared data and print a comparison table (reconstruction, codebook utilization, separability). | ✅ |
 
 ## Running
 
@@ -19,6 +20,7 @@ From the repository root, with the dev environment set up (`make setup-env`):
 uv run python examples/01_train_local_anndata.py
 uv run python examples/02_inspect_and_generate_codes.py
 uv run python examples/03_census_streaming.py   # requires network (Census)
+uv run python examples/04_benchmark_configs.py
 ```
 
 Each script exposes a `main()` function, so it can also be imported and driven
@@ -53,3 +55,5 @@ raw counts ──encode──► codes (n_cells, n_codebooks) ──decode──
   `decode_to_params` (the discrete-code latent API).
 - `omvqvae.hf_utils` — `save_pretrained` / `load_pretrained` / `push_to_hub` /
   `from_pretrained` (Hub-ready serialization).
+- `omvqvae.benchmark` — `run_suite` / `format_results_table` (compare
+  likelihood / codebook configs: reconstruction, codebook usage, separability).
