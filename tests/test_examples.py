@@ -72,6 +72,23 @@ def test_example_04_benchmarks_configs() -> None:
     assert len(table.splitlines()) == 6
 
 
+def test_example_05_writes_report(tmp_path: Path) -> None:
+    """Example 5 generates a Markdown benchmark report (run on a tiny fixture)."""
+    from omvqvae.benchmark import default_report_configs, generate_report
+
+    module = _load_example("05_benchmark_report.py")
+    # The module's ``main`` uses the report-scale defaults (slow); drive the
+    # underlying helpers on a tiny offline fixture to keep the smoke test fast.
+    assert callable(module.main)
+    fixture = module.make_benchmark_fixture(
+        n_cells=40, n_genes=8, n_programs=2, batch_size=16
+    )
+    configs = default_report_configs(max_epochs=1)[:1]
+    out = tmp_path / "report.md"
+    out.write_text(generate_report(fixture, configs), encoding="utf-8")
+    assert out.read_text(encoding="utf-8").startswith("# OQAE benchmark report")
+
+
 def test_example_03_imports() -> None:
     """The Census example imports cleanly (its ``main`` is network-gated)."""
     module = _load_example("03_census_streaming.py")
