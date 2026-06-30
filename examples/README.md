@@ -11,6 +11,7 @@ CELLxGENE Census and needs network access.
 | 2 | [`02_inspect_and_generate_codes.py`](02_inspect_and_generate_codes.py) | Encode cells to discrete codes, inspect codebook usage, decode codes back to expression, and generate a novel profile from edited codes. | ✅ |
 | 3 | [`03_census_streaming.py`](03_census_streaming.py) | Train at scale by streaming a Census slice via TileDB-SOMA (same `Minibatch` contract as example 1). | ❌ (network) |
 | 4 | [`04_benchmark_configs.py`](04_benchmark_configs.py) | Benchmark likelihood / codebook configs on shared data and print a comparison table (reconstruction, codebook utilization, separability). | ✅ |
+| 5 | [`05_benchmark_report.py`](05_benchmark_report.py) | Run the full PR #9 sweep (NB vs ZINB vs Gaussian, codebook sweeps) on a larger fixture and write the interpreted [`docs/benchmark_report.md`](../docs/benchmark_report.md). | ✅ |
 
 ## Running
 
@@ -21,6 +22,7 @@ uv run python examples/01_train_local_anndata.py
 uv run python examples/02_inspect_and_generate_codes.py
 uv run python examples/03_census_streaming.py   # requires network (Census)
 uv run python examples/04_benchmark_configs.py
+uv run python examples/05_benchmark_report.py   # writes docs/benchmark_report.md
 ```
 
 Each script exposes a `main()` function, so it can also be imported and driven
@@ -56,4 +58,6 @@ raw counts ──encode──► codes (n_cells, n_codebooks) ──decode──
 - `omvqvae.hf_utils` — `save_pretrained` / `load_pretrained` / `push_to_hub` /
   `from_pretrained` (Hub-ready serialization).
 - `omvqvae.benchmark` — `run_suite` / `format_results_table` (compare
-  likelihood / codebook configs: reconstruction, codebook usage, separability).
+  likelihood / codebook configs: reconstruction, codebook usage, separability)
+  and `make_benchmark_fixture` / `default_report_configs` / `generate_report`
+  (the full sweep + interpreted Markdown report).

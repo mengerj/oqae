@@ -77,6 +77,9 @@ a comparison-table report.
 .. automodule:: omvqvae.benchmark.harness
    :members:
 
+.. automodule:: omvqvae.benchmark.report
+   :members:
+
 Serialization (:mod:`omvqvae.hf_utils`)
 ---------------------------------------
 

@@ -32,6 +32,12 @@ from omvqvae.benchmark.metrics import (
     reconstruction_metrics,
     separability_score,
 )
+from omvqvae.benchmark.report import (
+    ReportFixture,
+    default_report_configs,
+    generate_report,
+    make_benchmark_fixture,
+)
 
 __all__ = [
     "BenchmarkConfig",
@@ -47,4 +53,8 @@ __all__ = [
     "codebook_usage",
     "reconstruction_metrics",
     "separability_score",
+    "ReportFixture",
+    "make_benchmark_fixture",
+    "default_report_configs",
+    "generate_report",
 ]

@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-29
+**Last updated:** 2026-06-30
 
 ## Current state
 
@@ -214,32 +214,56 @@
     train+evaluate, reproducibility, suite + reporting); `make ci` green
     (~99.6%).
 
-## Next task — PR #9 slice 2: likelihood / codebook sweeps + the report
+- **PR #9 slice 2 (empirical sweeps + report) — DONE (this PR).**
+  - `src/omvqvae/benchmark/report.py` — turns the slice-1 scaffold into a
+    reproducible **benchmark report**. `make_benchmark_fixture` builds a larger
+    pure-NumPy synthetic raw-count fixture (latent "programs", train/eval split,
+    a re-iterable `Minibatch` `DataLoader` train source — no AnnData dep);
+    `default_report_configs` is the fuller grid (NB vs ZINB vs **Gaussian** at a
+    shared `2x64` anchor, plus `codebook_size` 16/64/256 and `n_codebooks` 1/2/4
+    sweeps); `generate_report` runs `run_suite` over the fixture and renders a
+    Markdown report with an **auto-generated interpretation** (best NB
+    reconstruction, codebook collapse check at <50% utilization, separability
+    ranking, NB-vs-Gaussian on the comparable separability axis, batch-effect
+    note). Exported from `omvqvae.benchmark`.
+  - `examples/05_benchmark_report.py` regenerates the committed
+    `docs/benchmark_report.md` (offline, ~seconds). Wired into `examples/README.md`
+    and Sphinx `api.rst`. The report's empirical read on this synthetic fixture:
+    NB/ZINB cleanly recover the program structure (separability ~1.0) while the
+    log-normalized Gaussian and ZINB lag on separability (~0.45–0.49); larger
+    codebooks (`2x256`, `1x64`) under-utilize at this data scale — so **NB stays
+    the v1 default** and codebook capacity should track data scale.
+  - No new deps; `uv.lock` unchanged. Offline tests at ~100% on `report.py`
+    (fixture split/re-iterability/degenerate-split guard, the config grid, the
+    interpretation branches incl. collapse / Gaussian-wins / nan-separability,
+    and an end-to-end `generate_report`); example 5 smoke-tested. `make ci` green
+    (~99.8%); `make docs` clean.
 
-Slice 1 (the metrics/reporting scaffold) is **done**. Next slices for **PR #9**
-(see `docs/PROJECT_PLAN.md` → Phase 3):
+## Next task — PR #9 slice 3: Census streaming throughput/scaling
 
-- **Slice 2 — empirical sweeps + report**: use `omvqvae.benchmark.run_suite` to
-  run a fuller grid — **raw-count+NB vs log-normalized+Gaussian** and codebook
-  sweeps (`n_codebooks` × `codebook_size`) — on a more realistic fixture (more
-  cells/genes/programs, more epochs), and write the **benchmark report**
-  (`docs/` or a notebook-free Markdown page) interpreting reconstruction
-  quality, codebook utilization (no-collapse), and downstream separability. This
-  is where the parked **NB vs ZINB vs Gaussian** and **batch-effect
-  conditioning** questions get answered empirically.
+Slices 1 (metrics/reporting scaffold) and 2 (empirical sweeps + report) are
+**done**. The remaining slice for **PR #9** (see `docs/PROJECT_PLAN.md` →
+Phase 3):
+
 - **Slice 3 — streaming throughput/scaling**: a network-gated benchmark of
   Census streaming throughput (cells/s, time-to-N-steps) reusing the same
   `BenchmarkConfig`/`run_benchmark` contract over `build_census_dataloader`.
+  Keep the heavy/networked path behind `@pytest.mark.network` + `# pragma: no
+  cover` with a pure, offline-tested timing core (mirror the data-layer
+  pattern). This closes PR #9's exit criterion (throughput added to the report).
 
-### Building blocks already in place (for the remaining PR #9 slices)
+### Building blocks already in place (for the remaining PR #9 slice)
 
-- `omvqvae.benchmark.{run_suite, BenchmarkConfig, format_results_table,
-  results_to_dicts}` — the harness + reporting from slice 1.
+- `omvqvae.benchmark.{run_suite, run_benchmark, BenchmarkConfig,
+  format_results_table, results_to_dicts}` — the harness + reporting from
+  slice 1.
+- `omvqvae.benchmark.{make_benchmark_fixture, default_report_configs,
+  generate_report}` — the offline fixture + sweep + report from slice 2;
+  `generate_report` regenerates against real data by swapping the fixture's
+  training source.
 - `omvqvae.train.train` / `TrainConfig` — the source-agnostic loop used per
   config; `build_census_dataloader` provides the streamed `Minibatch` source for
   slice 3.
-- `examples/synthetic_data.py` — the offline raw-count AnnData fixture (latent
-  "programs") to benchmark reconstruction/separability against a known signal.
 
 ## Open questions / parked
 
@@ -258,6 +282,22 @@ Slice 1 (the metrics/reporting scaffold) is **done**. Next slices for **PR #9**
 
 ## Changelog (most recent first)
 
+- **2026-06-30** — PR #9 slice 2: empirical sweeps + benchmark report. Added
+  `src/omvqvae/benchmark/report.py` — `make_benchmark_fixture` (larger
+  pure-NumPy synthetic raw-count fixture with latent programs, train/eval split,
+  a re-iterable `Minibatch` `DataLoader` train source), `default_report_configs`
+  (NB vs ZINB vs Gaussian at a shared `2x64` anchor + `codebook_size` 16/64/256
+  and `n_codebooks` 1/2/4 sweeps), and `generate_report` (runs `run_suite` and
+  renders a Markdown report with an auto-generated interpretation:
+  within-likelihood reconstruction, codebook collapse check, separability
+  ranking, NB-vs-Gaussian, batch-effect note). Exported from `omvqvae.benchmark`.
+  Added `examples/05_benchmark_report.py` (regenerates the committed
+  `docs/benchmark_report.md` offline) and wired it into `examples/README.md` +
+  Sphinx `api.rst`. Empirically on the synthetic fixture: NB/ZINB recover the
+  programs (separability ~1.0) vs Gaussian/ZINB ~0.45–0.49; oversized codebooks
+  under-utilize — **NB stays the v1 default**. No new deps; `uv.lock` unchanged.
+  Offline tests at ~100% on `report.py`; `make ci` green (~99.8%), `make docs`
+  clean. Slice 3 (Census streaming throughput) is next.
 - **2026-06-29** — PR #9 slice 1: benchmarking harness. Added
   `src/omvqvae/benchmark/` — pure metrics (`codebook_usage` perplexity/
   utilization, `separability_score` nearest-centroid latent separability,
