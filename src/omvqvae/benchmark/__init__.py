@@ -38,6 +38,14 @@ from omvqvae.benchmark.report import (
     generate_report,
     make_benchmark_fixture,
 )
+from omvqvae.benchmark.throughput import (
+    ThroughputResult,
+    benchmark_census_throughput,
+    format_throughput_table,
+    make_train_step_fn,
+    measure_stream_throughput,
+    throughput_to_dicts,
+)
 
 __all__ = [
     "BenchmarkConfig",
@@ -57,4 +65,10 @@ __all__ = [
     "make_benchmark_fixture",
     "default_report_configs",
     "generate_report",
+    "ThroughputResult",
+    "measure_stream_throughput",
+    "make_train_step_fn",
+    "throughput_to_dicts",
+    "format_throughput_table",
+    "benchmark_census_throughput",
 ]

@@ -80,6 +80,9 @@ a comparison-table report.
 .. automodule:: omvqvae.benchmark.report
    :members:
 
+.. automodule:: omvqvae.benchmark.throughput
+   :members:
+
 Serialization (:mod:`omvqvae.hf_utils`)
 ---------------------------------------
 
