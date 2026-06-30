@@ -1,9 +1,9 @@
 # OQAE examples
 
 Runnable, self-contained scripts demonstrating the OQAE API end to end. Examples
-1, 2, and 4 run **offline in seconds** on tiny synthetic counts (see
-[`synthetic_data.py`](synthetic_data.py)); example 3 streams from the CZ
-CELLxGENE Census and needs network access.
+1, 2, 4, and 5 run **offline in seconds** on tiny synthetic counts (see
+[`synthetic_data.py`](synthetic_data.py)); examples 3 and 6 stream from the CZ
+CELLxGENE Census and need network access.
 
 | # | Script | What it shows | Offline |
 |---|--------|---------------|:-------:|
@@ -12,6 +12,7 @@ CELLxGENE Census and needs network access.
 | 3 | [`03_census_streaming.py`](03_census_streaming.py) | Train at scale by streaming a Census slice via TileDB-SOMA (same `Minibatch` contract as example 1). | ❌ (network) |
 | 4 | [`04_benchmark_configs.py`](04_benchmark_configs.py) | Benchmark likelihood / codebook configs on shared data and print a comparison table (reconstruction, codebook utilization, separability). | ✅ |
 | 5 | [`05_benchmark_report.py`](05_benchmark_report.py) | Run the full PR #9 sweep (NB vs ZINB vs Gaussian, codebook sweeps) on a larger fixture and write the interpreted [`docs/benchmark_report.md`](../docs/benchmark_report.md). | ✅ |
+| 6 | [`06_census_throughput.py`](06_census_throughput.py) | Profile Census streaming throughput (cells/s, time-to-first-batch) — raw streaming vs end-to-end with a model train step. | ❌ (network) |
 
 ## Running
 
@@ -23,6 +24,7 @@ uv run python examples/02_inspect_and_generate_codes.py
 uv run python examples/03_census_streaming.py   # requires network (Census)
 uv run python examples/04_benchmark_configs.py
 uv run python examples/05_benchmark_report.py   # writes docs/benchmark_report.md
+uv run python examples/06_census_throughput.py  # requires network (Census)
 ```
 
 Each script exposes a `main()` function, so it can also be imported and driven
@@ -60,4 +62,6 @@ raw counts ──encode──► codes (n_cells, n_codebooks) ──decode──
 - `omvqvae.benchmark` — `run_suite` / `format_results_table` (compare
   likelihood / codebook configs: reconstruction, codebook usage, separability)
   and `make_benchmark_fixture` / `default_report_configs` / `generate_report`
-  (the full sweep + interpreted Markdown report).
+  (the full sweep + interpreted Markdown report), plus
+  `measure_stream_throughput` / `benchmark_census_throughput` (streaming
+  throughput / scaling).

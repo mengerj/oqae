@@ -239,20 +239,60 @@
     and an end-to-end `generate_report`); example 5 smoke-tested. `make ci` green
     (~99.8%); `make docs` clean.
 
-## Next task — PR #9 slice 3: Census streaming throughput/scaling
+- **PR #9 slice 3 (Census streaming throughput/scaling) — DONE (this PR). PR #9 complete.**
+  - `src/omvqvae/benchmark/throughput.py` — the streaming/scaling benchmark for
+    the data path. `measure_stream_throughput(source, *, max_batches, max_cells,
+    warmup_batches, step_fn, clock, label)` is the **pure timing core**: it
+    iterates any re-iterable of `Minibatch` (a local `DataLoader` or a
+    `CensusMinibatchLoader`), optionally applies a per-batch `step_fn`, and
+    returns a `ThroughputResult` (cells/s, batches/s, seconds/batch,
+    time-to-first-batch). Leading `warmup_batches` are processed but excluded
+    from the steady-state window (and the clock only starts once they finish), so
+    a cold start doesn't depress the rates; an injectable `clock` makes the whole
+    thing deterministic offline. `make_train_step_fn(model, *, optimizer,
+    grad_clip_norm, lr, device)` builds a single-optimizer-step closure (mirrors
+    the `train` inner loop) so end-to-end streaming-plus-training throughput is
+    measurable; it reuses the `BenchmarkConfig` model contract (build a model
+    from `config.model_kwargs()`, pass `config.lr`/`config.grad_clip_norm`).
+    `throughput_to_dicts` / `format_throughput_table` mirror the slice-1
+    reporting helpers.
+  - `benchmark_census_throughput(organism, *, config, census_version,
+    obs/var_value_filter, batch_size, max_batches, warmup_batches, ...)` is the
+    one networked shell (`# pragma: no cover`): it opens a pinned Census, builds
+    `build_census_dataloader`, and feeds it to the offline timing core (raw
+    streaming when `config is None`, end-to-end when a `BenchmarkConfig` is
+    given). `examples/06_census_throughput.py` profiles raw vs end-to-end human
+    streaming (network-gated, imported in CI; `main` runs under
+    `@pytest.mark.network`).
+  - No new deps; `uv.lock` unchanged. Offline tests at 100% on `throughput.py`
+    (fake-clock rate maths, warmup exclusion, `max_batches`/`max_cells` stops,
+    empty/all-warmup edge cases, every validation path, `step_fn` application +
+    timing, `make_train_step_fn` updating the model / honoring an injected
+    optimizer+clip, the reporting helpers, and `BenchmarkConfig` → step-fn
+    round-trip) plus the example import smoke test; `make ci` green (~99.8%),
+    `make docs` clean. **PR #9 is now complete.**
 
-Slices 1 (metrics/reporting scaffold) and 2 (empirical sweeps + report) are
-**done**. The remaining slice for **PR #9** (see `docs/PROJECT_PLAN.md` →
-Phase 3):
+## Next task — PR #10: v1.0 release
 
-- **Slice 3 — streaming throughput/scaling**: a network-gated benchmark of
-  Census streaming throughput (cells/s, time-to-N-steps) reusing the same
-  `BenchmarkConfig`/`run_benchmark` contract over `build_census_dataloader`.
-  Keep the heavy/networked path behind `@pytest.mark.network` + `# pragma: no
-  cover` with a pure, offline-tested timing core (mirror the data-layer
-  pattern). This closes PR #9's exit criterion (throughput added to the report).
+PR #9 (benchmarking & scaling) is **done** across all three slices
+(metrics/reporting scaffold, empirical sweeps + report, Census streaming
+throughput). The next roadmap item is **PR #10 — v1.0 release** (see
+`docs/PROJECT_PLAN.md` → Phase 3):
 
-### Building blocks already in place (for the remaining PR #9 slice)
+- **API freeze**: confirm the public surface re-exported from each subpackage
+  `__init__` is the intended v1 API; tidy any stragglers.
+- **Final docs**: a top-level `README.md` pass (badges, quickstart, the
+  encode→codes→decode story) and a docs review (the Sphinx site already builds
+  warnings-as-errors in CI).
+- **Packaging / PyPI**: verify `pyproject.toml` metadata (classifiers, URLs,
+  `version = "1.0.0"`), build the sdist/wheel (`uv build`), and document the
+  release flow. Leave the actual PyPI upload (a networked, credentialed step)
+  for a human.
+
+This is naturally several slices — a good first chunk is the **README + API
+freeze audit** (offline, no new deps), with packaging/PyPI as a follow-up.
+
+### Building blocks already in place
 
 - `omvqvae.benchmark.{run_suite, run_benchmark, BenchmarkConfig,
   format_results_table, results_to_dicts}` — the harness + reporting from
@@ -261,9 +301,11 @@ Phase 3):
   generate_report}` — the offline fixture + sweep + report from slice 2;
   `generate_report` regenerates against real data by swapping the fixture's
   training source.
-- `omvqvae.train.train` / `TrainConfig` — the source-agnostic loop used per
-  config; `build_census_dataloader` provides the streamed `Minibatch` source for
-  slice 3.
+- `omvqvae.benchmark.{measure_stream_throughput, make_train_step_fn,
+  benchmark_census_throughput, format_throughput_table}` — the slice-3 streaming
+  throughput benchmark (pure core + networked Census shell).
+- `omvqvae.train.train` / `TrainConfig` — the source-agnostic loop;
+  `build_census_dataloader` provides the streamed `Minibatch` source.
 
 ## Open questions / parked
 
@@ -282,6 +324,21 @@ Phase 3):
 
 ## Changelog (most recent first)
 
+- **2026-06-30** — PR #9 slice 3: Census streaming throughput/scaling. Added
+  `src/omvqvae/benchmark/throughput.py` — `measure_stream_throughput` (the pure,
+  offline-tested timing core over any `Minibatch` stream: cells/s, batches/s,
+  time-to-first-batch, with warmup batches excluded from the steady-state window
+  and an injectable clock), `make_train_step_fn` (a single-optimizer-step closure
+  mirroring the `train` inner loop so end-to-end streaming-plus-training
+  throughput is measurable, reusing the `BenchmarkConfig` model contract),
+  `throughput_to_dicts` / `format_throughput_table` (CSV rows / Markdown table),
+  and `benchmark_census_throughput` (the one networked `# pragma: no cover` shell
+  that streams a live Census slice through the offline core). Added
+  `examples/06_census_throughput.py` (raw vs end-to-end human streaming profile,
+  network-gated, imported in CI). Wired exports into `omvqvae.benchmark` and the
+  Sphinx `api.rst`; updated `examples/README.md`. No new deps; `uv.lock`
+  unchanged. Offline tests at 100% on `throughput.py`; `make ci` green (~99.8%),
+  `make docs` clean. **PR #9 is now complete.** Next is PR #10 (v1.0 release).
 - **2026-06-30** — PR #9 slice 2: empirical sweeps + benchmark report. Added
   `src/omvqvae/benchmark/report.py` — `make_benchmark_fixture` (larger
   pure-NumPy synthetic raw-count fixture with latent programs, train/eval split,

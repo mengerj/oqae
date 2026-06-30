@@ -100,3 +100,16 @@ def test_example_03_streams() -> None:  # pragma: no cover - requires live Censu
     """Run the Census streaming example end to end (skipped by default)."""
     module = _load_example("03_census_streaming.py")
     module.main()
+
+
+def test_example_06_imports() -> None:
+    """The Census throughput example imports cleanly (``main`` is network-gated)."""
+    module = _load_example("06_census_throughput.py")
+    assert callable(module.main)
+
+
+@pytest.mark.network
+def test_example_06_profiles() -> None:  # pragma: no cover - requires live Census
+    """Run the Census throughput example end to end (skipped by default)."""
+    module = _load_example("06_census_throughput.py")
+    module.main()
