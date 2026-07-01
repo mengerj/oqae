@@ -13,6 +13,7 @@ CELLxGENE Census and need network access.
 | 4 | [`04_benchmark_configs.py`](04_benchmark_configs.py) | Benchmark likelihood / codebook configs on shared data and print a comparison table (reconstruction, codebook utilization, separability). | ✅ |
 | 5 | [`05_benchmark_report.py`](05_benchmark_report.py) | Run the full PR #9 sweep (NB vs ZINB vs Gaussian, codebook sweeps) on a larger fixture and write the interpreted [`docs/benchmark_report.md`](../docs/benchmark_report.md). | ✅ |
 | 6 | [`06_census_throughput.py`](06_census_throughput.py) | Profile Census streaming throughput (cells/s, time-to-first-batch) — raw streaming vs end-to-end with a model train step. | ❌ (network) |
+| 7 | [`07_latent_quality.py`](07_latent_quality.py) | Latent-quality metrics: quantization gap (continuous vs post-quantization separability), scIB clustering (NMI / ARI / cell-type ASW), and a latent UMAP. Needs the `benchmark` extra. | ✅ |
 
 ## Running
 
@@ -25,6 +26,7 @@ uv run python examples/03_census_streaming.py   # requires network (Census)
 uv run python examples/04_benchmark_configs.py
 uv run python examples/05_benchmark_report.py   # writes docs/benchmark_report.md
 uv run python examples/06_census_throughput.py  # requires network (Census)
+uv run python examples/07_latent_quality.py      # needs the `benchmark` extra
 ```
 
 Each script exposes a `main()` function, so it can also be imported and driven

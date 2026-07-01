@@ -4,7 +4,7 @@
 > end of every working session** so the next session can pick up cold. Keep it
 > short; deep rationale lives in `docs/PROJECT_PLAN.md`.
 
-**Last updated:** 2026-06-30
+**Last updated:** 2026-07-01
 
 ## Current state
 
@@ -271,6 +271,33 @@
     optimizer+clip, the reporting helpers, and `BenchmarkConfig` → step-fn
     round-trip) plus the example import smoke test; `make ci` green (~99.8%),
     `make docs` clean. **PR #9 is now complete.**
+- **Benchmark eval upgrades (issue #36) — DONE (this PR, branch
+  `claude/eval-upgrades`).** Adds offline latent-quality metrics so we can judge
+  a model beyond nearest-centroid separability. Three pieces:
+  - **Quantization-cost view.** `inference.encode` / `EncodedCells` now also
+    return `quantized` (the post-quantization latent, i.e. the codes embedded
+    back into latent space; free — same `model.quantize(z)` call). `evaluate_model`
+    reports `separability` (continuous `z`), `separability_quantized`, and their
+    `separability_gap` — how much biology the RVQ bottleneck discards. Surfaced in
+    `results_to_dicts` and the Markdown table (`sep_quant` / `sep_gap` columns).
+  - **scIB clustering metrics.** `benchmark/clustering.py::clustering_metrics`
+    (NMI / ARI via KMeans + cell-type ASW) using the new **optional `benchmark`
+    extra** (`scib-metrics`, `umap-learn`, `matplotlib`; `uv.lock` refreshed).
+    Lazy-imported; opt-in via `evaluate_model(..., compute_clustering=True)` /
+    `run_benchmark` / `run_suite`. Off by default so the core path never imports
+    jax/scib. The `nmi` / `ari` / `ct_asw` table columns appear only when
+    computed.
+  - **UMAP viz.** `benchmark/viz.py::plot_latent_umap` (+ `compute_umap`) —
+    grid of UMAP scatters, rows = `latent` / `quantized`, columns = `labels` /
+    `color_by` (batch view). Works on the continuous representations; raw integer
+    codes are intentionally not UMAP'd (Euclidean on codebook indices is
+    meaningless).
+  - New exports on `omvqvae.benchmark`. `examples/latent_quality.py` demonstrates
+    `compute_clustering=True` + a saved UMAP. Tests: clustering/viz guarded with
+    `importorskip` (run in CI since all extras are installed); Part A tests are
+    unconditional. `make ci` green (249 passed, ~99.6%).
+  - **Follow-up (issue #37):** scVI baseline behind a `LatentModel` protocol,
+    reusing these shared latent metrics.
 
 ## Next task — PR #10: v1.0 release
 

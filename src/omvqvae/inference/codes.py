@@ -89,11 +89,19 @@ class EncodedCells:
         The continuous pre-quantization latent of shape ``(n_cells, n_latent)``
         (``float32``); useful for inspecting quantization error but not required
         for decoding.
+    quantized : torch.Tensor
+        The continuous *post*-quantization latent of shape
+        ``(n_cells, n_latent)`` (``float32``) — the sum of the per-level codebook
+        vectors selected by ``codes``. This is the model's discrete
+        representation embedded back into latent space; comparing metrics on
+        ``latent`` vs ``quantized`` quantifies how much the codebook bottleneck
+        costs.
     """
 
     codes: Tensor
     size_factors: Tensor
     latent: Tensor
+    quantized: Tensor
 
     def __len__(self) -> int:
         return int(self.codes.shape[0])
@@ -195,15 +203,20 @@ def encode(
     counts_t = torch.from_numpy(np.ascontiguousarray(dense, dtype=np.float32))
     codes = torch.empty((n_cells, model.n_codebooks), dtype=torch.long)
     latent = torch.empty((n_cells, model.n_latent), dtype=torch.float32)
+    quantized = torch.empty((n_cells, model.n_latent), dtype=torch.float32)
 
     with _inference_mode(model):
         for start in range(0, n_cells, batch_size):
             stop = min(start + batch_size, n_cells)
             z = model.encode(counts_t[start:stop])
-            codes[start:stop] = model.quantize(z).indices
+            rvq = model.quantize(z)
+            codes[start:stop] = rvq.indices
             latent[start:stop] = z
+            quantized[start:stop] = rvq.quantized
 
-    return EncodedCells(codes=codes, size_factors=factors, latent=latent)
+    return EncodedCells(
+        codes=codes, size_factors=factors, latent=latent, quantized=quantized
+    )
 
 
 def encode_anndata(

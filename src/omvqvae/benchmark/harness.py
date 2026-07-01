@@ -131,13 +131,37 @@ class EvalMetrics:
     codebook : CodebookUsage
         Codebook perplexity / utilization over the evaluation cells.
     separability : float
-        Nearest-centroid separability of the latent given the eval labels, or
-        ``nan`` when labels are absent or degenerate.
+        Nearest-centroid separability of the **continuous** pre-quantization
+        latent given the eval labels, or ``nan`` when labels are absent or
+        degenerate. Kept as the headline separability for back-compat.
+    separability_quantized : float
+        Nearest-centroid separability of the **post-quantization** latent (the
+        discrete codes embedded back into latent space), or ``nan`` under the
+        same conditions.
+    separability_gap : float
+        ``separability - separability_quantized``: how much of the label
+        structure the codebook bottleneck discards. Near ``0`` means quantization
+        is cheap; a large positive value means the codes are lossy. ``nan`` when
+        either component is ``nan``.
+    nmi : float
+        Normalized mutual information between labels and a KMeans clustering of
+        the continuous latent (scIB-style). ``nan`` unless clustering metrics are
+        requested (they need the optional ``scib-metrics`` dependency).
+    ari : float
+        Adjusted Rand index for the same clustering. ``nan`` unless requested.
+    cell_type_asw : float
+        Cell-type average silhouette width of the continuous latent, rescaled to
+        ``[0, 1]``. ``nan`` unless requested.
     """
 
     reconstruction: ReconstructionMetrics
     codebook: CodebookUsage
     separability: float
+    separability_quantized: float
+    separability_gap: float
+    nmi: float = float("nan")
+    ari: float = float("nan")
+    cell_type_asw: float = float("nan")
 
 
 @dataclass
@@ -172,6 +196,7 @@ def evaluate_model(
     eval_size_factors: Optional["SizeFactorsLike"] = None,
     eval_labels: Optional[Sequence[object]] = None,
     batch_size: int = 512,
+    compute_clustering: bool = False,
 ) -> EvalMetrics:
     """
     Compute reconstruction, codebook, and separability metrics for a model.
@@ -189,6 +214,11 @@ def evaluate_model(
         Separability is ``nan`` when omitted.
     batch_size : int, default 512
         Cells per forward pass.
+    compute_clustering : bool, default False
+        Also compute the scIB-style NMI / ARI / cell-type-ASW clustering metrics
+        on the continuous latent (requires ``eval_labels`` and the optional
+        ``scib-metrics`` dependency). Off by default so the harness stays light
+        and dependency-free unless the caller opts in.
 
     Returns
     -------
@@ -213,9 +243,32 @@ def evaluate_model(
     usage = codebook_usage(encoded.codes, model.codebook_size)
     if eval_labels is None:
         separability = float("nan")
+        separability_quantized = float("nan")
+        separability_gap = float("nan")
     else:
         separability = separability_score(encoded.latent, eval_labels)
-    return EvalMetrics(reconstruction=recon, codebook=usage, separability=separability)
+        separability_quantized = separability_score(encoded.quantized, eval_labels)
+        separability_gap = separability - separability_quantized
+
+    nmi = ari = cell_type_asw = float("nan")
+    if compute_clustering and eval_labels is not None:
+        # Lazy import keeps the optional scib-metrics dependency out of the
+        # default (offline) path.
+        from omvqvae.benchmark.clustering import clustering_metrics
+
+        cluster = clustering_metrics(encoded.latent, eval_labels)
+        nmi, ari, cell_type_asw = cluster.nmi, cluster.ari, cluster.cell_type_asw
+
+    return EvalMetrics(
+        reconstruction=recon,
+        codebook=usage,
+        separability=separability,
+        separability_quantized=separability_quantized,
+        separability_gap=separability_gap,
+        nmi=nmi,
+        ari=ari,
+        cell_type_asw=cell_type_asw,
+    )
 
 
 def run_benchmark(
@@ -227,6 +280,7 @@ def run_benchmark(
     eval_size_factors: Optional["SizeFactorsLike"] = None,
     eval_labels: Optional[Sequence[object]] = None,
     eval_batch_size: int = 512,
+    compute_clustering: bool = False,
 ) -> BenchmarkResult:
     """
     Train one configuration and evaluate it on the held-out set.
@@ -249,6 +303,9 @@ def run_benchmark(
         Per-cell eval labels for the separability score.
     eval_batch_size : int, default 512
         Cells per evaluation forward pass.
+    compute_clustering : bool, default False
+        Forwarded to :func:`evaluate_model`; opt into the scIB-style NMI / ARI /
+        cell-type-ASW metrics (needs the optional ``scib-metrics`` dependency).
 
     Returns
     -------
@@ -283,6 +340,7 @@ def run_benchmark(
         eval_size_factors=eval_size_factors,
         eval_labels=eval_labels,
         batch_size=eval_batch_size,
+        compute_clustering=compute_clustering,
     )
     return BenchmarkResult(config=config, train_loss=train_loss, eval=eval_metrics)
 
@@ -296,6 +354,7 @@ def run_suite(
     eval_size_factors: Optional["SizeFactorsLike"] = None,
     eval_labels: Optional[Sequence[object]] = None,
     eval_batch_size: int = 512,
+    compute_clustering: bool = False,
 ) -> List[BenchmarkResult]:
     """
     Run :func:`run_benchmark` for each config against shared data.
@@ -316,6 +375,9 @@ def run_suite(
         Shared held-out labels for separability.
     eval_batch_size : int, default 512
         Cells per evaluation forward pass.
+    compute_clustering : bool, default False
+        Forwarded to each :func:`run_benchmark` call (opt into NMI / ARI /
+        cell-type ASW).
 
     Returns
     -------
@@ -333,6 +395,7 @@ def run_suite(
                 eval_size_factors=eval_size_factors,
                 eval_labels=eval_labels,
                 eval_batch_size=eval_batch_size,
+                compute_clustering=compute_clustering,
             )
         )
     return results
@@ -369,6 +432,11 @@ def results_to_dicts(results: Sequence[BenchmarkResult]) -> List[Dict[str, Any]]
                 "perplexity": result.eval.codebook.perplexity,
                 "utilization": result.eval.codebook.utilization,
                 "separability": result.eval.separability,
+                "separability_quantized": result.eval.separability_quantized,
+                "separability_gap": result.eval.separability_gap,
+                "nmi": result.eval.nmi,
+                "ari": result.eval.ari,
+                "cell_type_asw": result.eval.cell_type_asw,
             }
         )
     return rows
@@ -391,6 +459,13 @@ def format_results_table(results: Sequence[BenchmarkResult]) -> str:
     if not results:
         return "(no results)"
 
+    # The scIB clustering columns are only shown when at least one result
+    # actually computed them (opt-in via ``compute_clustering``); otherwise the
+    # table stays narrow with just the always-on metrics.
+    show_clustering = any(
+        result.eval.nmi == result.eval.nmi for result in results  # not nan
+    )
+
     headers = [
         "name",
         "likelihood",
@@ -401,7 +476,11 @@ def format_results_table(results: Sequence[BenchmarkResult]) -> str:
         "perplexity",
         "utilization",
         "separability",
+        "sep_quant",
+        "sep_gap",
     ]
+    if show_clustering:
+        headers += ["nmi", "ari", "ct_asw"]
 
     def _fmt(value: float) -> str:
         return "nan" if value != value else f"{value:.4g}"
@@ -409,19 +488,26 @@ def format_results_table(results: Sequence[BenchmarkResult]) -> str:
     rows: List[List[str]] = []
     for result in results:
         cfg = result.config
-        rows.append(
-            [
-                cfg.name,
-                cfg.likelihood,
-                f"{cfg.n_codebooks}x{cfg.codebook_size}",
-                _fmt(result.train_loss),
-                _fmt(result.eval.reconstruction.nll),
-                _fmt(result.eval.reconstruction.mae),
-                _fmt(result.eval.codebook.perplexity),
-                _fmt(result.eval.codebook.utilization),
-                _fmt(result.eval.separability),
+        row = [
+            cfg.name,
+            cfg.likelihood,
+            f"{cfg.n_codebooks}x{cfg.codebook_size}",
+            _fmt(result.train_loss),
+            _fmt(result.eval.reconstruction.nll),
+            _fmt(result.eval.reconstruction.mae),
+            _fmt(result.eval.codebook.perplexity),
+            _fmt(result.eval.codebook.utilization),
+            _fmt(result.eval.separability),
+            _fmt(result.eval.separability_quantized),
+            _fmt(result.eval.separability_gap),
+        ]
+        if show_clustering:
+            row += [
+                _fmt(result.eval.nmi),
+                _fmt(result.eval.ari),
+                _fmt(result.eval.cell_type_asw),
             ]
-        )
+        rows.append(row)
 
     widths = [
         max(len(headers[col]), *(len(row[col]) for row in rows))

@@ -67,6 +67,11 @@ def test_evaluate_model_returns_all_metrics() -> None:
     assert math.isfinite(metrics.reconstruction.nll)
     assert 0.0 <= metrics.codebook.utilization <= 1.0
     assert 0.0 <= metrics.separability <= 1.0
+    assert 0.0 <= metrics.separability_quantized <= 1.0
+    assert math.isclose(
+        metrics.separability_gap,
+        metrics.separability - metrics.separability_quantized,
+    )
     assert metrics.codebook.codebook_size == 16
 
 
@@ -76,6 +81,34 @@ def test_evaluate_model_without_labels_has_nan_separability() -> None:
     model = OmicsVQVAE(N_GENES, n_latent=8, hidden_dims=(16,))
     metrics = evaluate_model(model, counts)
     assert math.isnan(metrics.separability)
+    assert math.isnan(metrics.separability_quantized)
+    assert math.isnan(metrics.separability_gap)
+
+
+def test_evaluate_model_clustering_off_by_default() -> None:
+    """NMI/ARI/ASW stay nan unless clustering is explicitly requested."""
+    counts, labels = _synthetic_counts()
+    model = OmicsVQVAE(N_GENES, n_latent=8, hidden_dims=(16,), codebook_size=16)
+    metrics = evaluate_model(model, counts, eval_labels=labels)
+    assert math.isnan(metrics.nmi)
+    assert math.isnan(metrics.ari)
+    assert math.isnan(metrics.cell_type_asw)
+
+
+def test_evaluate_model_with_clustering_opt_in() -> None:
+    """``compute_clustering=True`` populates the scIB metrics (needs scib-metrics)."""
+    pytest.importorskip("scib_metrics")
+    counts, labels = _synthetic_counts()
+    model = OmicsVQVAE(N_GENES, n_latent=8, hidden_dims=(16,), codebook_size=16)
+    metrics = evaluate_model(model, counts, eval_labels=labels, compute_clustering=True)
+    assert 0.0 <= metrics.nmi <= 1.0
+    assert not math.isnan(metrics.ari)
+    assert 0.0 <= metrics.cell_type_asw <= 1.0
+    # The clustering columns surface in the table only when computed.
+    result = BenchmarkResult(
+        config=BenchmarkConfig(name="c"), train_loss=1.0, eval=metrics
+    )
+    assert "nmi" in format_results_table([result])
 
 
 def test_run_benchmark_trains_and_evaluates() -> None:
@@ -158,10 +191,14 @@ def test_run_suite_and_reporting() -> None:
     assert len(rows) == 3
     assert rows[0]["likelihood"] == "nb"
     assert "perplexity" in rows[0]
+    assert "separability_quantized" in rows[0]
+    assert "separability_gap" in rows[0]
 
     table = format_results_table(results)
     assert table.startswith("| name")
     assert "gaussian" in table
+    # Clustering was not requested, so those columns are omitted.
+    assert "nmi" not in table
     # One header, one separator, three data rows.
     assert len(table.splitlines()) == 5
 

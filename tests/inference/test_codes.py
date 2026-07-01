@@ -111,6 +111,8 @@ def test_encode_shapes_and_dtypes() -> None:
     assert enc.codes.dtype == torch.long
     assert enc.size_factors.shape == (7,)
     assert enc.latent.shape == (7, model.n_latent)
+    assert enc.quantized.shape == (7, model.n_latent)
+    assert enc.quantized.dtype == torch.float32
     assert len(enc) == 7
     # Default size factors are the per-cell totals ("total" mode).
     assert torch.allclose(enc.size_factors, counts.sum(dim=1))
@@ -125,6 +127,17 @@ def test_encode_matches_model_encode_codes() -> None:
     assert torch.equal(enc.codes, expected)
 
 
+def test_encode_quantized_matches_model_quantize() -> None:
+    """``EncodedCells.quantized`` is the post-quantization latent for the codes."""
+    model = _model()
+    counts = _counts()
+    model.eval()
+    with torch.no_grad():
+        expected = model.quantize(model.encode(counts)).quantized
+    enc = encode(model, counts)
+    assert torch.allclose(enc.quantized, expected, atol=1e-6)
+
+
 def test_encode_batched_equals_unbatched() -> None:
     model = _model()
     counts = _counts(n_cells=10)
@@ -132,6 +145,7 @@ def test_encode_batched_equals_unbatched() -> None:
     chunked = encode(model, counts, batch_size=3)
     assert torch.equal(full.codes, chunked.codes)
     assert torch.allclose(full.latent, chunked.latent, atol=1e-6)
+    assert torch.allclose(full.quantized, chunked.quantized, atol=1e-6)
 
 
 def test_encode_accepts_numpy_and_sparse() -> None:

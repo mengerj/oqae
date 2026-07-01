@@ -89,6 +89,27 @@ def test_example_05_writes_report(tmp_path: Path) -> None:
     assert out.read_text(encoding="utf-8").startswith("# OQAE benchmark report")
 
 
+def test_example_07_latent_quality() -> None:
+    """Example 7 runs the quality metrics + UMAP (needs the benchmark extra)."""
+    pytest.importorskip("scib_metrics")
+    pytest.importorskip("umap")
+    module = _load_example("07_latent_quality.py")
+    table, fig = module.main(compute_clustering=True, make_umap=True)
+    assert table.startswith("| name")
+    # Clustering was requested, so the scIB columns are present.
+    assert "nmi" in table
+    assert fig is not None
+
+
+def test_example_07_latent_quality_core_only() -> None:
+    """Example 7 also runs without the optional metrics (core install path)."""
+    module = _load_example("07_latent_quality.py")
+    table, fig = module.main(compute_clustering=False, make_umap=False)
+    assert table.startswith("| name")
+    assert "nmi" not in table
+    assert fig is None
+
+
 def test_example_03_imports() -> None:
     """The Census example imports cleanly (its ``main`` is network-gated)."""
     module = _load_example("03_census_streaming.py")
