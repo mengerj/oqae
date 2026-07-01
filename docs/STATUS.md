@@ -296,8 +296,34 @@
     `compute_clustering=True` + a saved UMAP. Tests: clustering/viz guarded with
     `importorskip` (run in CI since all extras are installed); Part A tests are
     unconditional. `make ci` green (249 passed, ~99.6%).
-  - **Follow-up (issue #37):** scVI baseline behind a `LatentModel` protocol,
-    reusing these shared latent metrics.
+- **scVI baseline behind a `LatentModel` protocol (issue #37) — DONE (this PR,
+  branch `claude/scvi-baseline`).** Lets us anchor OQAE's dataset/metric-relative
+  separability against a well-tested external VAE on the **same cells, genes, and
+  metrics**.
+  - `benchmark/baselines.py` — a thin `LatentModel` `Protocol`
+    (`name` + `fit(train_counts, *, genes, labels=None)` + `embed(counts) ->
+    (n_cells, d)`) and two adapters: `OmvqvaeLatentModel` (config-driven training
+    of an `OmicsVQVAE`, or wrap an already-trained model; `embed` returns the
+    continuous latent, or the post-quantization `.quantized` view opt-in) and
+    `ScviLatentModel` (wraps `scvi.model.SCVI`, **lazy-imported** with a clear
+    "install the `baselines` extra" error; trains unconditionally to match v1
+    OQAE). `compare_latent_models(models, eval_counts, labels, batch_key=None)`
+    embeds shared held-out cells through each fitted model and scores them with
+    the **same** shared metrics (`separability_score` + optional scIB
+    `clustering_metrics`), emitting a one-row-per-model table
+    (`format_latent_comparison` / `latent_comparison_to_dicts`). Reconstruction
+    NLL is deliberately **not** compared (incomparable units across likelihoods).
+  - New optional `baselines` extra (`scvi-tools>=1.1.0`), kept out of `dev` and
+    the offline default suite; `uv.lock` refreshed. Added the `scvi.*` mypy
+    ignore-missing override. `examples/compare_scvi.py` mirrors the config-sweep
+    examples (train OQAE + scVI on the same data, print the comparison, save a
+    UMAP per model); runs the OQAE-only path offline, full scVI path under the
+    `network` marker.
+  - Offline tests cover the OQAE adapter (fit/embed, wrap-a-trained-model,
+    quantized view, every guard), the scVI missing-dependency error (via
+    `sys.modules` hiding), and `compare_latent_models` + reporting; the scVI
+    training/embedding shell is `# pragma: no cover` + `@pytest.mark.network`.
+    `make ci` green (274 passed, ~99.6%); `make docs` clean.
 
 ## Next task — PR #10: v1.0 release
 
@@ -351,6 +377,18 @@ freeze audit** (offline, no new deps), with packaging/PyPI as a follow-up.
 
 ## Changelog (most recent first)
 
+- **2026-07-01** — Issue #37: scVI baseline behind a `LatentModel` protocol
+  (branch `claude/scvi-baseline`). Added `src/omvqvae/benchmark/baselines.py` —
+  the `LatentModel` `Protocol`, `OmvqvaeLatentModel` / `ScviLatentModel` adapters
+  (scVI lazy-imported behind a new optional `baselines` extra), and
+  `compare_latent_models` + `format_latent_comparison` /
+  `latent_comparison_to_dicts` scoring both models with the shared latent metrics
+  on the same cells/genes (no cross-model reconstruction NLL). Added
+  `examples/compare_scvi.py` (OQAE-vs-scVI, OQAE-only path offline, full path
+  network-gated), the `baselines` extra + `scvi.*` mypy override (`uv.lock`
+  refreshed), and Sphinx `api.rst` + `examples/README.md` entries. Offline tests
+  at ~100% on the new module (scVI shell `# pragma: no cover` + `network`);
+  `make ci` green (274 passed, ~99.6%), `make docs` clean.
 - **2026-06-30** — PR #9 slice 3: Census streaming throughput/scaling. Added
   `src/omvqvae/benchmark/throughput.py` — `measure_stream_throughput` (the pure,
   offline-tested timing core over any `Minibatch` stream: cells/s, batches/s,
