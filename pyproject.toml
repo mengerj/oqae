@@ -65,6 +65,11 @@ benchmark = [
     "umap-learn>=0.5.4",
     "matplotlib>=3.7.0",
 ]
+# External latent baselines (scVI) for the model-agnostic comparison. Heavy and
+# kept out of the default install / offline suite; see benchmark/baselines.py.
+baselines = [
+    "scvi-tools>=1.1.0",
+]
 
 [project.scripts]
 oqae-train = "omvqvae.train.cli:main"
@@ -128,6 +133,7 @@ module = [
     "tiledbsoma_ml.*",
     "scib_metrics.*",
     "umap.*",
+    "scvi.*",
 ]
 ignore_missing_imports = true
 

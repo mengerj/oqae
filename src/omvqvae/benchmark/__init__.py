@@ -15,6 +15,15 @@ stream later.
 
 from __future__ import annotations
 
+from omvqvae.benchmark.baselines import (
+    LatentModel,
+    LatentModelReport,
+    OmvqvaeLatentModel,
+    ScviLatentModel,
+    compare_latent_models,
+    format_latent_comparison,
+    latent_comparison_to_dicts,
+)
 from omvqvae.benchmark.clustering import ClusteringMetrics, clustering_metrics
 from omvqvae.benchmark.harness import (
     BenchmarkConfig,
@@ -50,6 +59,13 @@ from omvqvae.benchmark.throughput import (
 from omvqvae.benchmark.viz import compute_umap, plot_latent_umap
 
 __all__ = [
+    "LatentModel",
+    "LatentModelReport",
+    "OmvqvaeLatentModel",
+    "ScviLatentModel",
+    "compare_latent_models",
+    "latent_comparison_to_dicts",
+    "format_latent_comparison",
     "BenchmarkConfig",
     "BenchmarkResult",
     "EvalMetrics",
