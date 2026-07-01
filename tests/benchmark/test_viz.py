@@ -58,3 +58,30 @@ def test_plot_latent_umap_length_mismatch_raises() -> None:
     latent, labels = _latent()
     with pytest.raises(ValueError, match="labels has length"):
         plot_latent_umap(latent, labels[:-1], n_neighbors=5)
+
+
+def test_compute_umap_jitter_breaks_duplicate_ties() -> None:
+    """Jitter de-duplicates a discrete (quantized-like) latent for UMAP."""
+    rng = np.random.default_rng(0)
+    codebook = rng.normal(size=(6, 8))
+    assign = rng.integers(0, 6, size=60)
+    quantized = codebook[assign].astype(np.float32)  # only 6 distinct rows
+    # Without jitter UMAP still runs, but the input is massively degenerate.
+    coords = compute_umap(quantized, n_neighbors=5, jitter=0.05)
+    assert coords.shape == (60, 2)
+    assert np.isfinite(coords).all()
+
+
+def test_compute_umap_jitter_zero_is_noop() -> None:
+    """``jitter=0`` leaves the data untouched (deterministic embedding)."""
+    from omvqvae.benchmark.viz import _apply_jitter
+
+    latent, _ = _latent()
+    same = _apply_jitter(latent, 0.0, 0)
+    assert np.array_equal(same, latent)
+
+
+def test_compute_umap_negative_jitter_raises() -> None:
+    latent, _ = _latent()
+    with pytest.raises(ValueError, match="jitter must be non-negative"):
+        compute_umap(latent, n_neighbors=5, jitter=-0.1)

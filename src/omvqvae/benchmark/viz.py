@@ -50,6 +50,7 @@ def compute_umap(
     n_neighbors: int = 15,
     min_dist: float = 0.1,
     random_state: int = 0,
+    jitter: float = 0.0,
 ) -> np.ndarray:
     """
     Project a latent space to 2-D with UMAP.
@@ -63,7 +64,17 @@ def compute_umap(
     min_dist : float, default 0.1
         UMAP minimum-distance packing parameter.
     random_state : int, default 0
-        Seed for a deterministic embedding.
+        Seed for a deterministic embedding (and for the jitter noise).
+    jitter : float, default 0.0
+        Standard deviation of optional Gaussian noise added before embedding,
+        **as a fraction of the mean per-dimension standard deviation** of the
+        data. Use a small value (e.g. ``0.02``) for a *discrete* latent such as
+        the post-quantization representation: identical codes produce exactly
+        coincident rows, whose zero-distance ties make UMAP's spectral
+        initialization fail ("too small an eigengap" → random init → a
+        scattered, structure-less layout). A touch of jitter breaks the ties so
+        the global layout is recovered, without meaningfully moving points. No-op
+        at ``0.0``.
 
     Returns
     -------
@@ -75,7 +86,7 @@ def compute_umap(
     ImportError
         If ``umap-learn`` is not installed.
     ValueError
-        If ``latent`` is not 2-D.
+        If ``latent`` is not 2-D or ``jitter`` is negative.
     """
     try:
         import umap
@@ -85,11 +96,27 @@ def compute_umap(
     array = np.asarray(_to_numpy(latent), dtype=np.float32)
     if array.ndim != 2:
         raise ValueError(f"latent must be 2-D (n_cells, n_latent); got {array.ndim}-D.")
+    array = _apply_jitter(array, jitter, random_state)
     reducer = umap.UMAP(
         n_neighbors=n_neighbors, min_dist=min_dist, random_state=random_state
     )
     coords: np.ndarray = reducer.fit_transform(array)
     return coords
+
+
+def _apply_jitter(array: np.ndarray, jitter: float, random_state: int) -> np.ndarray:
+    """Add Gaussian noise scaled to the data's spread (tie-breaking for UMAP)."""
+    if jitter < 0.0:
+        raise ValueError(f"jitter must be non-negative; got {jitter}.")
+    if jitter == 0.0:
+        return array
+    scale = float(np.mean(array.std(axis=0))) * jitter
+    if scale <= 0.0:  # degenerate (constant) latent — nothing to break up
+        return array
+    rng = np.random.default_rng(random_state)
+    noise = rng.normal(scale=scale, size=array.shape).astype(array.dtype)
+    jittered: np.ndarray = array + noise
+    return jittered
 
 
 def plot_latent_umap(
@@ -103,6 +130,8 @@ def plot_latent_umap(
     min_dist: float = 0.1,
     random_state: int = 0,
     point_size: float = 6.0,
+    jitter: float = 0.0,
+    quantized_jitter: float = 0.02,
 ) -> "Figure":
     """
     UMAP-embed a latent and scatter it, coloured by categorical annotations.
@@ -131,6 +160,15 @@ def plot_latent_umap(
         Forwarded to :func:`compute_umap`.
     point_size : float, default 6.0
         Scatter marker size.
+    jitter : float, default 0.0
+        Jitter applied to the **continuous** ``latent`` row (see
+        :func:`compute_umap`); usually unnecessary and left at ``0``.
+    quantized_jitter : float, default 0.02
+        Jitter applied to the **quantized** row. The post-quantization latent is
+        discrete — cells sharing codes are exactly coincident — which makes UMAP's
+        spectral init fail and scatter the points; a small default jitter breaks
+        those ties so the quantized panel shows the same structure the near-zero
+        separability gap implies. Set to ``0`` to disable.
 
     Returns
     -------
@@ -160,9 +198,11 @@ def plot_latent_umap(
     if not colorings:
         colorings.append(("cells", [0] * n_cells))
 
-    rows: List[Tuple[str, "LatentLike"]] = [("latent", latent)]
+    # Each row carries its own jitter: the discrete quantized latent needs a
+    # touch to break exact-duplicate ties, the continuous latent usually does not.
+    rows: List[Tuple[str, "LatentLike", float]] = [("latent", latent, jitter)]
     if quantized is not None:
-        rows.append(("quantized", quantized))
+        rows.append(("quantized", quantized, quantized_jitter))
 
     n_rows, n_cols = len(rows), len(colorings)
     fig, axes = plt.subplots(
@@ -171,12 +211,13 @@ def plot_latent_umap(
         figsize=(5.0 * n_cols, 4.5 * n_rows),
         squeeze=False,
     )
-    for r, (row_name, rep) in enumerate(rows):
+    for r, (row_name, rep, row_jitter) in enumerate(rows):
         coords = compute_umap(
             rep,
             n_neighbors=n_neighbors,
             min_dist=min_dist,
             random_state=random_state,
+            jitter=row_jitter,
         )
         for c, (col_name, groups) in enumerate(colorings):
             ax = axes[r][c]
