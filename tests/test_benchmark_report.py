@@ -146,6 +146,8 @@ def _result(
                 codebook_size=16,
             ),
             separability=separability,
+            separability_quantized=separability,
+            separability_gap=0.0,
         ),
     )
 

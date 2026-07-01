@@ -15,6 +15,7 @@ stream later.
 
 from __future__ import annotations
 
+from omvqvae.benchmark.clustering import ClusteringMetrics, clustering_metrics
 from omvqvae.benchmark.harness import (
     BenchmarkConfig,
     BenchmarkResult,
@@ -46,6 +47,7 @@ from omvqvae.benchmark.throughput import (
     measure_stream_throughput,
     throughput_to_dicts,
 )
+from omvqvae.benchmark.viz import compute_umap, plot_latent_umap
 
 __all__ = [
     "BenchmarkConfig",
@@ -61,6 +63,10 @@ __all__ = [
     "codebook_usage",
     "reconstruction_metrics",
     "separability_score",
+    "ClusteringMetrics",
+    "clustering_metrics",
+    "compute_umap",
+    "plot_latent_umap",
     "ReportFixture",
     "make_benchmark_fixture",
     "default_report_configs",
