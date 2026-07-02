@@ -37,6 +37,7 @@ The scVI pieces need the optional ``baselines`` extra
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import numpy as np
@@ -98,18 +99,29 @@ def main(
         The comparison table and the OQAE / scVI UMAP figures (``None`` when a
         model is absent or ``make_umap`` is False).
     """
-    train_counts, eval_counts, genes, eval_labels, _ = _synthetic_split()
+    data_path = Path("/Volumes/sandisk_2tb/dev/oqae/data/tab-sap-marrow.h5ad")
+    panel_path = Path(__file__).resolve().parents[1] / "resources" / "gene_selection_2k.txt"
 
-    # --- Swap in real data for a meaningful comparison: -------------------- #
-    # from omvqvae.data import (GeneVocabulary, load_anndata, extract_counts)
-    # from omvqvae.data.anndata_io import align_to_reference
-    # adata = load_anndata("/path/to/tab-sap-marrow.h5ad")
-    # counts, gene_ids = extract_counts(adata)
-    # panel = [l.strip() for l in open("resources/gene_selection_2k.txt")]
-    # vocab = GeneVocabulary("homo_sapiens", panel)
-    # aligned = align_to_reference(counts, gene_ids, vocab, min_overlap=500)
-    # (then split `aligned` / `adata.obs["cell_type"]` into train/eval)
-    # ----------------------------------------------------------------------- #
+    from omvqvae.data import GeneVocabulary, load_anndata, extract_counts
+    from omvqvae.data.anndata_io import align_to_reference
+
+    adata = load_anndata(data_path)
+    counts, gene_ids = extract_counts(adata)
+    panel = [line.strip() for line in panel_path.read_text().splitlines() if line.strip()]
+    vocab = GeneVocabulary("homo_sapiens", panel)
+    aligned = align_to_reference(counts, gene_ids, vocab, min_overlap=500)
+
+    labels = list(adata.obs["cell_type"])
+    rng = np.random.default_rng(0)
+    perm = rng.permutation(aligned.shape[0])
+    n_train = int(round(0.8 * aligned.shape[0]))
+    train_idx, eval_idx = perm[:n_train], perm[n_train:]
+    train_counts = aligned[train_idx]
+    eval_counts = aligned[eval_idx]
+    eval_labels = [labels[i] for i in eval_idx]
+    genes = vocab.gene_ids
+
+    # OQAE behind the protocol: a realistic-ish config trained on the raw counts.
 
     # OQAE behind the protocol: a realistic-ish config trained on the raw counts.
     oqae_config = BenchmarkConfig(
