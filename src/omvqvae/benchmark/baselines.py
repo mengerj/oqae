@@ -210,10 +210,11 @@ class OmvqvaeLatentModel:
             )
         if self.config is None:
             # Wrapping an already-trained model: only validate the feature space.
-            assert self._model is not None
-            if self._model.n_genes != n_genes:
+            # __init__ guarantees a model is set whenever config is None.
+            model = self._model
+            if model is not None and model.n_genes != n_genes:
                 raise ValueError(
-                    f"wrapped model expects {self._model.n_genes} genes but "
+                    f"wrapped model expects {model.n_genes} genes but "
                     f"train_counts has {n_genes}."
                 )
             return

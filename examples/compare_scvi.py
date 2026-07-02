@@ -74,8 +74,46 @@ def _synthetic_split() -> Tuple[np.ndarray, np.ndarray, List[str], List[str], Li
     return train_counts, eval_counts, genes, eval_labels, labels
 
 
+#: Real-data default: a local Tabula Sapiens bone-marrow ``.h5ad`` aligned to the
+#: committed 2k gene panel. Falls back to synthetic data when the file is absent
+#: (e.g. in CI), so the example stays runnable everywhere.
+DEFAULT_DATA_PATH = Path("/Volumes/sandisk_2tb/dev/oqae/data/tab-sap-marrow.h5ad")
+
+
+def _real_split(
+    data_path: Path,
+) -> Tuple[np.ndarray, np.ndarray, List[str], List[str], List[str]]:
+    """Load a local ``.h5ad``, align to the 2k panel, and split train/eval."""
+    from omvqvae.data import GeneVocabulary, extract_counts, load_anndata
+    from omvqvae.data.anndata_io import align_to_reference
+
+    panel_path = (
+        Path(__file__).resolve().parents[1] / "resources" / "gene_selection_2k.txt"
+    )
+    adata = load_anndata(data_path)
+    counts, gene_ids = extract_counts(adata)
+    panel = [ln.strip() for ln in panel_path.read_text().splitlines() if ln.strip()]
+    vocab = GeneVocabulary("homo_sapiens", panel)
+    aligned = align_to_reference(counts, gene_ids, vocab, min_overlap=500)
+    labels = list(adata.obs["cell_type"])
+
+    rng = np.random.default_rng(0)
+    perm = rng.permutation(aligned.shape[0])
+    n_train = int(round(0.8 * aligned.shape[0]))
+    train_idx, eval_idx = perm[:n_train], perm[n_train:]
+    eval_labels = [labels[i] for i in eval_idx]
+    return (
+        aligned[train_idx],
+        aligned[eval_idx],
+        list(vocab.gene_ids),
+        eval_labels,
+        labels,
+    )
+
+
 def main(
     *,
+    data_path: Optional[Path] = None,
     use_scvi: bool = True,
     compute_clustering: bool = True,
     make_umap: bool = True,
@@ -85,6 +123,10 @@ def main(
 
     Parameters
     ----------
+    data_path : pathlib.Path, optional
+        Local ``.h5ad`` of raw counts to compare on (defaults to
+        :data:`DEFAULT_DATA_PATH`). When the file is missing, the example falls
+        back to the tiny synthetic split so it still runs anywhere.
     use_scvi : bool, default True
         Include the scVI baseline (needs the ``baselines`` extra). Set False to
         run the OQAE-only path on a core install.
@@ -99,29 +141,12 @@ def main(
         The comparison table and the OQAE / scVI UMAP figures (``None`` when a
         model is absent or ``make_umap`` is False).
     """
-    data_path = Path("/Volumes/sandisk_2tb/dev/oqae/data/tab-sap-marrow.h5ad")
-    panel_path = Path(__file__).resolve().parents[1] / "resources" / "gene_selection_2k.txt"
-
-    from omvqvae.data import GeneVocabulary, load_anndata, extract_counts
-    from omvqvae.data.anndata_io import align_to_reference
-
-    adata = load_anndata(data_path)
-    counts, gene_ids = extract_counts(adata)
-    panel = [line.strip() for line in panel_path.read_text().splitlines() if line.strip()]
-    vocab = GeneVocabulary("homo_sapiens", panel)
-    aligned = align_to_reference(counts, gene_ids, vocab, min_overlap=500)
-
-    labels = list(adata.obs["cell_type"])
-    rng = np.random.default_rng(0)
-    perm = rng.permutation(aligned.shape[0])
-    n_train = int(round(0.8 * aligned.shape[0]))
-    train_idx, eval_idx = perm[:n_train], perm[n_train:]
-    train_counts = aligned[train_idx]
-    eval_counts = aligned[eval_idx]
-    eval_labels = [labels[i] for i in eval_idx]
-    genes = vocab.gene_ids
-
-    # OQAE behind the protocol: a realistic-ish config trained on the raw counts.
+    path = DEFAULT_DATA_PATH if data_path is None else data_path
+    if path.exists():
+        train_counts, eval_counts, genes, eval_labels, _ = _real_split(path)
+    else:
+        print(f"{path} not found — falling back to synthetic data.")
+        train_counts, eval_counts, genes, eval_labels, _ = _synthetic_split()
 
     # OQAE behind the protocol: a realistic-ish config trained on the raw counts.
     oqae_config = BenchmarkConfig(
