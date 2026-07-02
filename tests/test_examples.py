@@ -110,6 +110,34 @@ def test_example_07_latent_quality_core_only() -> None:
     assert fig is None
 
 
+def test_example_compare_scvi_oqae_only() -> None:
+    """The scVI-comparison example runs the OQAE-only path offline."""
+    pytest.importorskip("scib_metrics")
+    pytest.importorskip("umap")
+    module = _load_example("compare_scvi.py")
+    table, oqae_fig, scvi_fig = module.main(use_scvi=False, make_umap=True)
+    assert table.startswith("| model")
+    assert "OQAE" in table
+    assert oqae_fig is not None
+    assert scvi_fig is None
+
+
+def test_example_compare_scvi_imports() -> None:
+    """The scVI-comparison example imports cleanly (scVI path is optional)."""
+    module = _load_example("compare_scvi.py")
+    assert callable(module.main)
+
+
+@pytest.mark.network
+def test_example_compare_scvi_runs() -> None:  # pragma: no cover - needs scvi-tools
+    """Run the full OQAE-vs-scVI comparison end to end (skipped by default)."""
+    pytest.importorskip("scvi")
+    module = _load_example("compare_scvi.py")
+    table, oqae_fig, scvi_fig = module.main(use_scvi=True, make_umap=True)
+    assert "scVI" in table
+    assert oqae_fig is not None and scvi_fig is not None
+
+
 def test_example_03_imports() -> None:
     """The Census example imports cleanly (its ``main`` is network-gated)."""
     module = _load_example("03_census_streaming.py")

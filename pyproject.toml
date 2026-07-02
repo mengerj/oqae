@@ -65,6 +65,11 @@ benchmark = [
     "umap-learn>=0.5.4",
     "matplotlib>=3.7.0",
 ]
+# External latent baselines (scVI) for the model-agnostic comparison. Heavy and
+# kept out of the default install / offline suite; see benchmark/baselines.py.
+baselines = [
+    "scvi-tools>=1.1.0",
+]
 
 [project.scripts]
 oqae-train = "omvqvae.train.cli:main"
@@ -128,16 +133,19 @@ module = [
     "tiledbsoma_ml.*",
     "scib_metrics.*",
     "umap.*",
+    "scvi.*",
 ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# Sphinx (installed via the ``docs`` extra) is never imported by ``omvqvae`` but
-# is reachable in mypy's transitive import graph. Don't follow into its source:
-# recent Sphinx uses PEP 695 ``type`` statements that fail to parse under the
-# pinned 3.11 grammar (only surfaces on a 3.12 interpreter).
+# Sphinx (docs extra) and zarr (a transitive anndata dependency) are reachable in
+# mypy's import graph but never type-relevant to ``omvqvae``. Don't follow into
+# their source: recent releases use PEP 695 ``type`` statements / type-parameter
+# lists that fail to parse under the pinned 3.11 grammar (zarr>=3.2 only ships on
+# a 3.12+ interpreter, so this only surfaces there).
 module = [
     "sphinx.*",
+    "zarr.*",
 ]
 follow_imports = "skip"
 ignore_missing_imports = true
